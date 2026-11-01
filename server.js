@@ -15,6 +15,8 @@ const { WHEEL_ORDER, RED } = require('./src/roulette');
 const { TOPUP_MAX, START_BALANCE, isCents } = require('./src/money');
 const skinsMod = require('./src/skins');
 const progress = require('./src/progress');
+const { createArcade } = require('./src/arcade');
+const skinsModMigrate = require('./src/skins');
 
 const PORT = Number(process.env.PORT) || 3000;
 const SESSION_DAYS = 30;
@@ -25,6 +27,7 @@ const REG_MAX = Number(process.env.KAZINO_REG_LIMIT) || 60; // registracijos / v
 
 async function createServer(opts = {}) {
   const db = await Db.open(opts.db || {});
+  await skinsModMigrate.migrateInventory(db);
   const app = express();
   app.disable('x-powered-by');
   if (TRUST_PROXY) app.set('trust proxy', 1);
@@ -47,8 +50,10 @@ async function createServer(opts = {}) {
   });
   const sessionsOf = new Map(); // socket.id -> vartotojas
 
+  let arcade = null;
   const casino = new Casino(db, (c) => {
     const common = c.commonState();
+    if (arcade) common.arcade = arcade.publicState();
     const bjStates = new Map(c.bj.map((t) => [t.num, t.state()]));
     for (const u of c.users.values()) {
       if (!u.socketId) continue;
@@ -58,6 +63,10 @@ async function createServer(opts = {}) {
   });
   await casino.init();
   const skins = skinsMod.createApi(casino);
+  casino.skinsApi = skins;
+  arcade = createArcade(casino, db);
+  casino.onWager = (name, amount, kind) => arcade.note(name, amount, kind);
+  arcade.start();
 
   app.get('/health', (_req, res) => res.json({ ok: true, online: casino.onlineCount(), db: db.kind }));
   app.get('/config.json', (_req, res) =>
@@ -70,6 +79,7 @@ async function createServer(opts = {}) {
       slot: { syms: SL_SYMS, pay3: SL_PAY3, twoCherry: SL_TWO_CHERRY, rtp: slotRtp() },
       skins: skinsMod.publicConfig(),
       progress: progress.publicProgress(),
+      arcade: arcade ? arcade.publicConfig() : null,
     })
   );
 
@@ -290,7 +300,8 @@ async function createServer(opts = {}) {
       const row = await db.get('SELECT last_daily FROM users WHERE id = ?', [u.id]);
       const prev = row ? Number(row.last_daily) || 0 : 0;
       if (prev === today) return fail(cb, 'Šiandienos dovaną jau paėmei. Kita bus rytoj (pasaulio laiku, UTC).');
-      const amount = casino.capped(u, progress.DAILY_BONUS);
+      const info = progress.tierFromWager(u.stats.wagered);
+      const amount = casino.capped(u, Math.floor(progress.DAILY_BONUS * info.tier.daily));
       if (amount <= 0) return fail(cb, 'Balansas jau per didelis šiai dovanai.');
       u.balance += amount;
       try {
@@ -451,6 +462,8 @@ async function createServer(opts = {}) {
       await skinOp(u, cb, () => skins.upgrade(u, body));
     });
 
+    arcade.bind(socket, { me, need, fail, ok });
+
     socket.on('disconnect', () => {
       if (sessionsOf.has(socket.id)) {
         sessionsOf.delete(socket.id);
@@ -461,6 +474,7 @@ async function createServer(opts = {}) {
 
   async function close() {
     clearInterval(sweeper);
+    if (arcade) arcade.stop();
     casino.destroy();
     io.close();
     await new Promise((r) => server.close(() => r()));

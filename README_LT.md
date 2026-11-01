@@ -11,9 +11,14 @@ Tai **vienas bendras kazino** visiems: jokių kambarių ar kodų. Kiekvienas sus
 | 🎡 Laimės ratas | vienas bendras visiems, žaidėjų skaičius neribojamas | 54 segmentai, daugiklio langelis, 4 premijos, grąžinimas apie 95 % kiekvienam statymui |
 | 🎲 Kauliukai | individualiai | 99 % grąžinimas |
 | 🍒 Automatas | individualiai | 3 būgnai, 95,15 % grąžinimas |
-| 📦 Upgrader | dėžės, parduotuvė, inventorius | Išgalvoti ginklų skinai. Dėžių grąžinimas apie 90 %, pardavimas atgal 90 %, upgraderio tikimybė = įnašas / tikslas × 93 % (ribos 1–80 %) |
+| 📦 Upgrader | dėžės, parduotuvė, inventorius | Originalūs skinai. Dėžių grąžinimas apie 90 %, pardavimas atgal 90 %, upgraderio tikimybė = įnašas / tikslas × 93 % (ribos 1–80 %) |
+| 🚀 Crash | vienas bendras raundas visiems | Daugiklis kyla, kol nukrenta. Grąža apie **96,5 %**. Galima išeiti ranka arba nurodyti auto × |
+| 💣 Mines | individualiai, 5×5 | Pasirenki 1–24 minas, atidarai langelius ir pasiimi kada nori. Daugiklis = 96,5 % / tikimybė išgyventi |
+| 🟡 Plinko | individualiai | 8–16 eilučių, rizika maža / vidutinė / didelė. Binų daugikliai sunormuoti taip, kad grąža būtų apie **96,5 %** |
+| 🪙 Moneta | dvikova su kitu žaidėju arba botu | Laimėtojas gauna **1,93×** statymą (96,5 %). Jei niekas neprisijungia per 30 s, stoja botas |
+| 🥊 Dėžių kovos | 1v1, 1v1v1, 2v2 | Visi moka tą pačią dėžių kainą. Dėžės atsidaro vienu metu, didžiausia vertė pasiima visus skinus. Tuščias vietas užpildo botai |
 
-Viršuje yra du skyriai: **Kazino** (blackjack, ruletė, Laimės ratas, kauliukai, automatas) ir **Upgrader**. Balansas visada matomas viršuje. Sąsaja pritaikyta telefonui.
+Apačioje telefone: **Lobby**, **Žaidimai**, **Upgrader**, **Kovos**, **Profilis**. VIP, misijos ir turnyrai pasiekiami iš Lobby ir profilio. Balansas visada matomas viršuje. Sąsaja pritaikyta telefonui ir veikia plačiame ekrane.
 
 Taip pat yra:
 - bendras pokalbis;
@@ -32,7 +37,11 @@ Taip pat yra:
 
 Skyrius „Upgrader“ naudoja tuos pačius paskyrų balansus. **Skinų negalima iškeisti, išsiimti ar parduoti už tikrus pinigus.** Nėra mokėjimų, kortelių, banko ar prizų.
 
-Skinai yra išgalvoti (pvz. „AK-X | Gintarinis žaibas“). Paveikslėliai braižomi naršyklėje pagal retumo spalvą. Retumo pakopos: Gatvės, Dirbtuvės, Lauko, Ribotas, Slaptas, Mitinis, Legendinis. Būklė: Gamyklinis, Beveik naujas, Išbandytas, Nusidėvėjęs, Mūšio randai. Kiekvienas skinas turi fiksuotą žaidimo eurų vertę.
+Skinų pavadinimai originalūs (pvz. „AK-47 | Žaibo audra“). Ginklo modelio vardas gali būti tikras (AK-47, M4A4, AWP, Karambitas…), apdailos vardas – mūsų. Paveikslėliai braižomi naršyklėje: siluetas pagal ginklo tipą, gradientas ir raštas pagal skiną, švytėjimas pagal retumą. Išorinių paveikslėlių nėra.
+
+Retumo pakopos (spalvos kaip įprasta skinų svetainėse, bet pavadinimai lietuviški): Plataus vartojimo, Pramoninis, Kariuomenės, Riboto naudojimo, Slaptas, Klasifikuotas, Itin retas ★ (peiliai ir pirštinės). Būklė: Factory New, Minimal Wear, Field-Tested, Well-Worn, Battle-Scarred, su float reikšme. Variantas **Skaitiklis** yra retas priedas prie kai kurių skinų. Kiekvienas katalogo skinas turi fiksuotą žaidimo eurų vertę; dėžių kaina skaičiuojama iš šios vertės, kad teorinis grąžinimas būtų apie **90 %**.
+
+Seni inventoriaus įrašai su žinomu `skin_id` lieka. Nežinomas identifikatorius, jei jis yra skaičius, perkeliamas į artimiausią katalogo skiną pagal vertę; kitu atveju – į pigiausią.
 
 Kaip gauti skiną:
 
@@ -49,7 +58,20 @@ Kaip gauti skiną:
 - Laimėjus gauni tikslo skiną, pralaimėjus įnašas prarandamas.
 - Viskas vienoje DB transakcijoje. Tas pats daiktas negali būti panaudotas du kartus.
 
-Inventorius saugomas lentelėje `inventory`, įvykiai – `skin_events`. Senesnė duomenų bazė (tik `users` / `sessions` / `open_bets`) papildoma šiomis lentelėmis paleidžiant serverį; **esami balansai neperrašomi**. Bendroje juostoje matyti paskutinės dėžės ir upgraderio metimai, profilyje – tavo istorija.
+Inventorius saugomas lentelėje `inventory`, įvykiai – `skin_events`. Senesnė duomenų bazė papildoma lentelėmis paleidžiant serverį (taip pat `holds`, `mission_progress`, `tournament_scores`, `tournament_paid`); **esami balansai neperrašomi**. Bendroje juostoje matyti paskutinės dėžės ir upgraderio metimai, profilyje – tavo istorija.
+
+## Nauji žaidimai, kovos, VIP (žaidimo pinigai)
+
+Visi nauji žaidimai skaičiuojami serveryje (`crypto` atsitiktinumas, centai). Pinigai lieka žaidimo pinigai.
+
+- **Crash** – bendras raundas. Jei vienetinis metimas `< 3,5 %`, daugiklis iškart 1,00×. Kitu atveju `floor(0,965 / (1 − x) × 100)` šimtųjų dalių, ribos 1,00×–1000×. Taip teorinė grąža yra apie **96,5 %**. Statymas rezervuojamas; neišėjus jis nurašomas, išėjus išmokama `statymas × daugiklis`.
+- **Mines** – 25 langeliai. Daugiklis po k saugų langelių yra `floor(0,965 / p × 100) / 100`, kur p – tikimybė tiek kartų iš eilės nepataikyti į miną.
+- **Plinko** – kiekvienas kamuoliukas nepriklausomai krenta kairėn arba dešinėn. Daugikliai kraštuose didesni, o visa skalė padauginta taip, kad tikėtina grąža būtų apie **96,5 %** (dėl apvalinimo žemyn šiek tiek mažiau).
+- **Moneta** – laimėtojas gauna `floor(2 × statymas × 965 / 1000)`, tai yra **1,93×** (96,5 %).
+- **Dėžių kovos** – kaina lygi pasirinktų dėžių kainai. Serveris meta kiekvieną dėžę atskirai. Lygiosios skaidomos atsitiktinai. Laimėtojas gauna visus iškritusius skinus.
+- **Turnyrai** – dienos Crash daugiklis (fondas 1 000 €), daugiausiai pastatyta (1 000 €), geriausias upgrade (800 €) ir savaitės Crash (4 000 €). Fondą sudeda namai, ne žaidėjai. Geriausi trys dalijasi 50 % / 30 % / 20 %. Išmoka įvyksta pasibaigus laikotarpiui (vidurnaktis **Europe/Vilnius**).
+- **Misijos** – dienos ir savaitės užduotys (dėžės, upgrade, blackjack, Plinko, statymai, Crash išėmimai). Atlygis – žaidimo pinigai. Skaitiklis atsistato su nauju Vilniaus dienos arba savaitės raktu.
+- **VIP** – patirtis = `floor(pastatyta / 100)`. Pakopos: Bronza, Sidabras, Auksas, Platina, Deimantas. Kuo aukščiau, tuo didesnė žaidimo pinigų grąža nuo statymų (0,2 %–1 %), didesnė dienos dovana ir (nuo Sidabro) viena nemokama VIP dėžė per Vilniaus dieną.
 
 ---
 

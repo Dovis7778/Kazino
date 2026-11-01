@@ -17,6 +17,7 @@ const W = require('../src/wheel');
 const solo = require('../src/solo');
 const skins = require('../src/skins');
 const progress = require('../src/progress');
+const arcade = require('../src/arcade');
 
 const PG = process.env.DATABASE_URL || '';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'kazino-test-'));
@@ -107,6 +108,14 @@ async function main() {
   ok(progress.utcDay(Date.UTC(2026, 0, 2)) === 20260102, 'UTC diena');
   ok(progress.achievements({ games: 10, biggestWin: 0, wagered: 0, items: 0, balance: 0 }).filter((a) => a.ok).length >= 3, 'pasiekimai');
   ok(progress.DAILY_BONUS === 100000, 'dienos dovana 1 000 €');
+  ok(skins.migrateByValue(40000) === 'ak-gintaras', 'migracija pagal vertę');
+  ok(arcade.coinflipPayout(1000) === 1930, 'moneta 96,5 %');
+  ok(Math.abs(arcade.plinkoRtp(8, 'low') - 0.965) < 0.03, 'plinko RTP');
+  ok(arcade.minesMult(3, 1) > 1, 'mines daugiklis');
+  const cp = arcade.crashPoint();
+  ok(cp >= 100 && cp <= 100000, 'crash taškas');
+  ok(progress.tierFromWager(0).tier.id === 'bronza', 'VIP bronza');
+  ok(progress.vilniusDay(Date.UTC(2026, 5, 1, 22)).length === 10, 'Vilniaus diena');
 
   // Tikimybių matematika (be serverio).
   const V = skins.byId('ak-gintaras').value;
@@ -144,7 +153,7 @@ async function main() {
   }
   if (PG) {
     const d = await openDb();
-    for (const sql of ['DROP TABLE IF EXISTS skin_events', 'DROP TABLE IF EXISTS inventory', 'DROP TABLE IF EXISTS open_bets', 'DROP TABLE IF EXISTS sessions', 'DROP TABLE IF EXISTS users']) {
+    for (const sql of ['DROP TABLE IF EXISTS tournament_paid', 'DROP TABLE IF EXISTS tournament_scores', 'DROP TABLE IF EXISTS mission_progress', 'DROP TABLE IF EXISTS holds', 'DROP TABLE IF EXISTS skin_events', 'DROP TABLE IF EXISTS inventory', 'DROP TABLE IF EXISTS open_bets', 'DROP TABLE IF EXISTS sessions', 'DROP TABLE IF EXISTS users']) {
       await d.tx([[sql]]);
     }
     await d.close();
@@ -583,6 +592,63 @@ async function main() {
   const sold2 = await oda2.emit('skin:sell', keepItem.id);
   ok(sold2.ok && sold2.payout === skins.sellPayout(500) && sold2.balance === odaSnap.balance + skins.sellPayout(500), 'po perkrovimo pardavimas 90 %');
   ok(!sold2.items.some((i) => i.id === keepItem.id), 'parduotas daiktas dingsta');
+
+  // ---------- nauji žaidimai, kovos, misijos, VIP ----------
+  {
+    const G = await register('Zaidejas');
+    let placed = false;
+    let round = 0;
+    let before = 0;
+    for (let i = 0; i < 6 && !placed; i++) {
+      await G.wait((s) => s.arcade && s.arcade.crash && s.arcade.crash.phase === 'betting', 8000);
+      before = G.bal();
+      round = G.st.arcade.crash.round;
+      placed = (await G.emit('crash:bet', { amount: 500, auto: 0 })).ok;
+    }
+    ok(placed, 'crash statymas');
+    await G.wait((s) => s.arcade.crash.round > round, 20000);
+    await G.wait((s) => s.me.balance === before - 500, 5000);
+    ok(true, 'crash be išėjimo nurašo statymą');
+    const mines = await G.emit('mines:start', { bet: 1000, mines: 1 });
+    ok(mines.ok && mines.mines === 1, 'mines pradžia');
+    let guard = 0;
+    let boom = false;
+    while (guard < 24) {
+      const hit = await G.emit('mines:click', guard);
+      ok(hit.ok, 'mines langelis');
+      if (hit.boom) { boom = true; break; }
+      guard++;
+    }
+    if (!boom) {
+      const out = await G.emit('mines:cashout', {});
+      ok(out.ok && out.pay >= 1000, 'mines išėmimas');
+    } else ok(true, 'mines mina');
+    const pk = await G.emit('plinko:drop', { bet: 1000, rows: 8, risk: 'low' });
+    ok(pk.ok && pk.pay === Math.floor(1000 * pk.mult) && pk.path.length === 8, 'plinko išmoka');
+    const flip = await G.emit('coinflip:create', { amount: 1000, bot: true });
+    ok(flip.ok, 'moneta prieš botą');
+    await G.wait((s) => (s.arcade.flips || []).some((f) => f.id === flip.flip.id && f.status === 'done'), 5000);
+    ok(true, 'moneta baigta');
+    const battle = await G.emit('battle:create', { mode: '1v1', cases: ['smelis'], rounds: 1 });
+    ok(battle.ok, 'kova sukurta');
+    const started = await G.emit('battle:start', battle.battle.id);
+    ok(started.ok && started.battle.winner, 'kova su botu baigta');
+    let plinkoM = null;
+    for (let i = 0; i < 15 && !(plinkoM && plinkoM.progress >= 1); i++) {
+      const ms = await G.emit('mission:list', {});
+      plinkoM = ms.ok ? ms.missions.find((m) => m.id === 'd-plinko') : null;
+      if (!(plinkoM && plinkoM.progress >= 1)) await sleep(100);
+    }
+    ok(plinkoM && plinkoM.progress >= 1, 'plinko misija');
+    const claim = await G.emit('mission:claim', 'd-plinko');
+    ok(claim.ok && claim.reward === 5000, 'misijos atlygis');
+    ok(!(await G.emit('mission:claim', 'd-plinko')).ok, 'misija neatsiimama dukart');
+    const vip = await G.emit('vip:get', {});
+    ok(vip.ok && vip.tier === 'bronza', 'VIP bronza naujai paskyrai');
+    const tours = await G.emit('tour:list', {});
+    ok(tours.ok && tours.tournaments.length >= 3, 'turnyrų sąrašas');
+    console.log('Arcade OK');
+  }
 
   // ---------- grakštus sustabdymas ----------
   await killServer('SIGTERM');

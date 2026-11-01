@@ -90,6 +90,9 @@
         <span id="dailyMsg" class="small"></span>
       </div>
       <div id="achBox" class="achs"></div>
+      <div id="vipBox"></div>
+      <div id="missionBox"></div>
+      <div id="tourBox"></div>
       <div class="lbl">Pasirink avatarą</div>
       <div id="profAvatars" class="avatars"></div>
       <div id="adminBox" class="row wrap hidden">
@@ -122,6 +125,10 @@
         <button class="tab" data-tab="lt" type="button">Ratas</button>
         <button class="tab" data-tab="dc" type="button">Kauliukai</button>
         <button class="tab" data-tab="sl" type="button">Automatas</button>
+        <button class="tab" data-tab="crash" type="button">Crash</button>
+        <button class="tab" data-tab="mines" type="button">Mines</button>
+        <button class="tab" data-tab="plinko" type="button">Plinko</button>
+        <button class="tab" data-tab="coinflip" type="button">Moneta</button>
       </nav>
       <nav class="tabs sidenav uptabs hidden" id="upNav" role="tablist" aria-label="Upgrader">
         <button class="uptab active" data-up="upgrade" type="button">Upgrader</button>
@@ -130,17 +137,27 @@
       </nav>
       <main class="games">
         <div id="sec-casino">
-        <div class="game" id="g-home">
+        <div class="game" id="g-lobby"><div id="lobbyHome"></div></div>
+        <div class="game hidden" id="g-home">
           <div class="lobby" id="lobby">
             <button class="lobby-card" type="button" data-goto="bj"><span class="lobby-ico"><svg class="ico"><use href="#i-cards"/></svg></span><b>Blackjack</b><span>Bendri stalai, iki 7 žaidėjų</span></button>
             <button class="lobby-card" type="button" data-goto="rl"><span class="lobby-ico"><svg class="ico"><use href="#i-wheel"/></svg></span><b>Ruletė</b><span>Viena bendra, europietiška</span></button>
             <button class="lobby-card" type="button" data-goto="lt"><span class="lobby-ico"><svg class="ico"><use href="#i-spark"/></svg></span><b>Laimės ratas</b><span>Bendras ratas ir premijos</span></button>
             <button class="lobby-card" type="button" data-goto="dc"><span class="lobby-ico"><svg class="ico"><use href="#i-dice"/></svg></span><b>Kauliukai</b><span>Individualiai, 99 % grąža</span></button>
             <button class="lobby-card" type="button" data-goto="sl"><span class="lobby-ico"><svg class="ico"><use href="#i-cherry"/></svg></span><b>Automatas</b><span>Trys būgnai, tavo sukimas</span></button>
+            <button class="lobby-card" type="button" data-goto="crash"><span class="lobby-ico"><svg class="ico"><use href="#i-spark"/></svg></span><b>Crash</b><span>Bendras daugiklis, išeik laiku</span></button>
+            <button class="lobby-card" type="button" data-goto="mines"><span class="lobby-ico"><svg class="ico"><use href="#i-dice"/></svg></span><b>Mines</b><span>5×5, pasirink minas</span></button>
+            <button class="lobby-card" type="button" data-goto="plinko"><span class="lobby-ico"><svg class="ico"><use href="#i-wheel"/></svg></span><b>Plinko</b><span>8–16 eilučių</span></button>
+            <button class="lobby-card" type="button" data-goto="coinflip"><span class="lobby-ico"><svg class="ico"><use href="#i-cards"/></svg></span><b>Moneta</b><span>Dvikova arba botas</span></button>
             <button class="lobby-card up" type="button" data-goto-sec="up"><span class="lobby-ico"><svg class="ico"><use href="#i-spark"/></svg></span><b>Upgrader</b><span>Dėžės, skinai, ratas</span></button>
           </div>
         </div>
         <!-- BLACKJACK -->
+        <div class="game hidden" id="g-crash"></div>
+        <div class="game hidden" id="g-mines"></div>
+        <div class="game hidden" id="g-plinko"></div>
+        <div class="game hidden" id="g-coinflip"></div>
+        <div class="game hidden" id="g-kovos"></div>
         <div class="game hidden" id="g-bj">
           <div id="bjTables" class="bj-tables"></div>
           <div class="felt bj-felt">
@@ -314,8 +331,9 @@
 
   <nav class="bottomnav" id="bottomNav" aria-label="Apačia">
     <button type="button" data-bnav="lobby"><svg class="ico"><use href="#i-home"/></svg><span>Lobby</span></button>
-    <button type="button" data-bnav="kazino"><svg class="ico"><use href="#i-cards"/></svg><span>Kazino</span></button>
+    <button type="button" data-bnav="kazino"><svg class="ico"><use href="#i-cards"/></svg><span>Žaidimai</span></button>
     <button type="button" data-bnav="up"><svg class="ico"><use href="#i-spark"/></svg><span>Upgrader</span></button>
+    <button type="button" data-bnav="kovos"><svg class="ico"><use href="#i-dice"/></svg><span>Kovos</span></button>
     <button type="button" data-bnav="profile"><svg class="ico"><use href="#i-user"/></svg><span>Profilis</span></button>
   </nav>
   <canvas id="fx" class="fx" aria-hidden="true"></canvas>
@@ -323,5 +341,6 @@
   <div id="profModal" class="modal hidden"><div class="modal-card" id="profModalBody"></div></div>
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
+  <script src="arcade.js"></script>
 </body>
 </html>

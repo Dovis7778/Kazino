@@ -1,5 +1,5 @@
 'use strict';
-// Originalūs išgalvoti ginklų skinai (ne Counter-Strike / Valve pavadinimai).
+// Originalūs skinų pavadinimai. Ginklo modelis gali būti tikras, apdaila – mūsų.
 // Vertės – centais. Dėžių kaina parenkama taip, kad teorinis grąžinimas būtų ~90 %.
 // Upgraderis: tikimybė = įnašas / tikslas × 93 %, apvalinta žemyn, ribos 1–80 %.
 const { fmt, BALANCE_CAP } = require('./money');
@@ -16,62 +16,68 @@ const MAX_BATCH = 12;
 const TARGET_RTP = 0.9;
 
 const RARITIES = [
-  { id: 'gatve', name: 'Gatvės', color: '#b0c3d9', rank: 0 },
-  { id: 'dirbtuves', name: 'Dirbtuvės', color: '#5e98d9', rank: 1 },
-  { id: 'lauko', name: 'Lauko', color: '#4b69ff', rank: 2 },
-  { id: 'ribotas', name: 'Ribotas', color: '#8847ff', rank: 3 },
+  { id: 'vartojimo', name: 'Plataus vartojimo', color: '#b0c3d9', rank: 0 },
+  { id: 'pramoninis', name: 'Pramoninis', color: '#5e98d9', rank: 1 },
+  { id: 'kariuomene', name: 'Kariuomenės', color: '#4b69ff', rank: 2 },
+  { id: 'riboto', name: 'Riboto naudojimo', color: '#8847ff', rank: 3 },
   { id: 'slaptas', name: 'Slaptas', color: '#d32ce6', rank: 4 },
-  { id: 'mitinis', name: 'Mitinis', color: '#eb4b4b', rank: 5 },
-  { id: 'legendinis', name: 'Legendinis', color: '#e4ae39', rank: 6 },
+  { id: 'klasifikuotas', name: 'Klasifikuotas', color: '#eb4b4b', rank: 5 },
+  { id: 'itinretas', name: 'Itin retas ★', color: '#e4ae39', rank: 6 },
 ];
 
 const WEARS = [
-  { id: 'gamyklinis', name: 'Gamyklinis' },
-  { id: 'beveik', name: 'Beveik naujas' },
-  { id: 'isbandytas', name: 'Išbandytas' },
-  { id: 'nusidevejes', name: 'Nusidėvėjęs' },
-  { id: 'musio', name: 'Mūšio randai' },
+  { id: 'fn', name: 'Factory New', mult: 1.2, float: 0.03 },
+  { id: 'mw', name: 'Minimal Wear', mult: 1, float: 0.11 },
+  { id: 'ft', name: 'Field-Tested', mult: 0.78, float: 0.25 },
+  { id: 'ww', name: 'Well-Worn', mult: 0.58, float: 0.41 },
+  { id: 'bs', name: 'Battle-Scarred', mult: 0.42, float: 0.62 },
 ];
 
 const WEAPONS = [
-  { id: 'ak', name: 'AK-X' },
-  { id: 'varnis', name: 'Varnis-9' },
-  { id: 'pulsas', name: 'Pulsas' },
-  { id: 'medziotojas', name: 'Medžiotojas' },
-  { id: 'sratas', name: 'Šratas-12' },
-  { id: 'kibirkstis', name: 'Kibirkštis' },
-  { id: 'asmenys', name: 'Ašmenys' },
-  { id: 'lokys', name: 'Lokys' },
+  { id: 'ak47', name: 'AK-47' },
+  { id: 'm4a4', name: 'M4A4' },
+  { id: 'm4a1s', name: 'M4A1-S' },
+  { id: 'awp', name: 'AWP' },
+  { id: 'deagle', name: 'Desert Eagle' },
+  { id: 'usp', name: 'USP-S' },
+  { id: 'glock', name: 'Glock-18' },
+  { id: 'p250', name: 'P250' },
+  { id: 'mp9', name: 'MP9' },
+  { id: 'karambitas', name: 'Karambitas' },
+  { id: 'drugelis', name: 'Drugelis' },
+  { id: 'durklas', name: 'Durklas' },
+  { id: 'pirstines', name: 'Pirštinės' },
 ];
 
 const SKINS = [
-  { id: 'vx-dulkes', weapon: 'varnis', name: 'Varnis-9 | Pilkos dulkės', rarity: 'gatve', wear: 'musio', value: 200 },
-  { id: 'sr-smelis', weapon: 'sratas', name: 'Šratas-12 | Smėlio pūga', rarity: 'gatve', wear: 'nusidevejes', value: 350 },
-  { id: 'ps-juosta', weapon: 'pulsas', name: 'Pulsas | Ruda juosta', rarity: 'gatve', wear: 'isbandytas', value: 500 },
-  { id: 'ak-samanos', weapon: 'ak', name: 'AK-X | Samanų dryžiai', rarity: 'gatve', wear: 'beveik', value: 800 },
-  { id: 'kb-viela', weapon: 'kibirkstis', name: 'Kibirkštis | Mėlyna viela', rarity: 'dirbtuves', wear: 'isbandytas', value: 1500 },
-  { id: 'md-rasa', weapon: 'medziotojas', name: 'Medžiotojas | Ryto rasa', rarity: 'dirbtuves', wear: 'nusidevejes', value: 2200 },
-  { id: 'vx-ledas', weapon: 'varnis', name: 'Varnis-9 | Ledo brūkšnys', rarity: 'dirbtuves', wear: 'beveik', value: 3200 },
-  { id: 'sr-rukas', weapon: 'sratas', name: 'Šratas-12 | Uosto rūkas', rarity: 'dirbtuves', wear: 'gamyklinis', value: 4500 },
-  { id: 'ak-baltija', weapon: 'ak', name: 'AK-X | Baltijos rūkas', rarity: 'lauko', wear: 'isbandytas', value: 8000 },
-  { id: 'ps-samanos', weapon: 'pulsas', name: 'Pulsas | Nakties samanos', rarity: 'lauko', wear: 'beveik', value: 12000 },
-  { id: 'as-vilkas', weapon: 'asmenys', name: 'Ašmenys | Sidabro vilkas', rarity: 'lauko', wear: 'gamyklinis', value: 18000 },
-  { id: 'lk-ziedas', weapon: 'lokys', name: 'Lokys | Geležies žiedas', rarity: 'lauko', wear: 'musio', value: 25000 },
-  { id: 'ak-gintaras', weapon: 'ak', name: 'AK-X | Gintarinis žaibas', rarity: 'ribotas', wear: 'beveik', value: 40000 },
-  { id: 'md-dumas', weapon: 'medziotojas', name: 'Medžiotojas | Purpurinis dūmas', rarity: 'ribotas', wear: 'isbandytas', value: 65000 },
-  { id: 'kb-vainikas', weapon: 'kibirkstis', name: 'Kibirkštis | Ugnies vainikas', rarity: 'ribotas', wear: 'gamyklinis', value: 90000 },
-  { id: 'as-menulis', weapon: 'asmenys', name: 'Ašmenys | Mėnulio pjūvis', rarity: 'ribotas', wear: 'beveik', value: 130000 },
-  { id: 'ak-aurora', weapon: 'ak', name: 'AK-X | Auroros gija', rarity: 'slaptas', wear: 'isbandytas', value: 250000 },
-  { id: 'md-erelis', weapon: 'medziotojas', name: 'Medžiotojas | Auksinis erelis', rarity: 'slaptas', wear: 'beveik', value: 400000 },
-  { id: 'as-gintaras', weapon: 'asmenys', name: 'Ašmenys | Kruvinas gintaras', rarity: 'slaptas', wear: 'gamyklinis', value: 600000 },
-  { id: 'lk-audra', weapon: 'lokys', name: 'Lokys | Audros širdis', rarity: 'slaptas', wear: 'musio', value: 900000 },
-  { id: 'ak-saule', weapon: 'ak', name: 'AK-X | Saulėlydžio mitas', rarity: 'mitinis', wear: 'beveik', value: 1500000 },
-  { id: 'as-feniksas', weapon: 'asmenys', name: 'Ašmenys | Fenikso plunksna', rarity: 'mitinis', wear: 'gamyklinis', value: 2500000 },
-  { id: 'md-zvaigzde', weapon: 'medziotojas', name: 'Medžiotojas | Žvaigždžių lankas', rarity: 'mitinis', wear: 'isbandytas', value: 4000000 },
-  { id: 'ps-neon', weapon: 'pulsas', name: 'Pulsas | Neono upė', rarity: 'mitinis', wear: 'gamyklinis', value: 6000000 },
-  { id: 'as-karuna', weapon: 'asmenys', name: 'Ašmenys | Karūnos ašara', rarity: 'legendinis', wear: 'gamyklinis', value: 12000000 },
-  { id: 'ak-kalve', weapon: 'ak', name: 'AK-X | Dievų kalvė', rarity: 'legendinis', wear: 'beveik', value: 25000000 },
-  { id: 'lk-amzinybe', weapon: 'lokys', name: 'Lokys | Amžinybės būgnas', rarity: 'legendinis', wear: 'gamyklinis', value: 50000000 },
+  { id: 'vx-dulkes', weapon: 'glock', name: 'Glock-18 | Pilkos dulkės', rarity: 'vartojimo', wear: 'bs', wearName: 'Battle-Scarred', float: 0.71, skaitiklis: false, value: 200 },
+  { id: 'sr-smelis', weapon: 'p250', name: 'P250 | Smėlio pūga', rarity: 'vartojimo', wear: 'ww', wearName: 'Well-Worn', float: 0.42, skaitiklis: false, value: 350 },
+  { id: 'ps-juosta', weapon: 'mp9', name: 'MP9 | Ruda juosta', rarity: 'vartojimo', wear: 'ft', wearName: 'Field-Tested', float: 0.27, skaitiklis: false, value: 500 },
+  { id: 'ak-samanos', weapon: 'ak47', name: 'AK-47 | Samanų dryžiai', rarity: 'vartojimo', wear: 'mw', wearName: 'Minimal Wear', float: 0.12, skaitiklis: false, value: 800 },
+  { id: 'kb-viela', weapon: 'usp', name: 'USP-S | Mėlyna viela', rarity: 'pramoninis', wear: 'ft', wearName: 'Field-Tested', float: 0.22, skaitiklis: false, value: 1500 },
+  { id: 'md-rasa', weapon: 'awp', name: 'AWP | Ryto rasa', rarity: 'pramoninis', wear: 'ww', wearName: 'Well-Worn', float: 0.4, skaitiklis: false, value: 2200 },
+  { id: 'vx-ledas', weapon: 'deagle', name: 'Desert Eagle | Ledo brūkšnys', rarity: 'pramoninis', wear: 'mw', wearName: 'Minimal Wear', float: 0.1, skaitiklis: false, value: 3200 },
+  { id: 'sr-rukas', weapon: 'm4a1s', name: 'M4A1-S | Uosto rūkas', rarity: 'pramoninis', wear: 'fn', wearName: 'Factory New', float: 0.02, skaitiklis: false, value: 4500 },
+  { id: 'ak-baltija', weapon: 'ak47', name: 'AK-47 | Baltijos rūkas', rarity: 'kariuomene', wear: 'ft', wearName: 'Field-Tested', float: 0.24, skaitiklis: false, value: 8000 },
+  { id: 'ps-samanos', weapon: 'mp9', name: 'MP9 | Nakties samanos', rarity: 'kariuomene', wear: 'mw', wearName: 'Minimal Wear', float: 0.09, skaitiklis: false, value: 12000 },
+  { id: 'as-vilkas', weapon: 'm4a4', name: 'M4A4 | Sidabro vilkas', rarity: 'kariuomene', wear: 'fn', wearName: 'Factory New', float: 0.01, skaitiklis: false, value: 18000 },
+  { id: 'lk-ziedas', weapon: 'pirstines', name: 'Pirštinės | Geležies žiedas', rarity: 'kariuomene', wear: 'bs', wearName: 'Battle-Scarred', float: 0.66, skaitiklis: false, value: 25000 },
+  { id: 'ak-gintaras', weapon: 'ak47', name: 'AK-47 | Žaibo audra', rarity: 'riboto', wear: 'mw', wearName: 'Minimal Wear', float: 0.11, skaitiklis: false, value: 40000 },
+  { id: 'ak-gintaras-st', weapon: 'ak47', name: 'AK-47 | Žaibo audra', rarity: 'riboto', wear: 'mw', wearName: 'Minimal Wear', float: 0.1, skaitiklis: true, value: 64000 },
+  { id: 'md-dumas', weapon: 'awp', name: 'AWP | Purpurinis dūmas', rarity: 'riboto', wear: 'ft', wearName: 'Field-Tested', float: 0.28, skaitiklis: false, value: 65000 },
+  { id: 'kb-vainikas', weapon: 'deagle', name: 'Desert Eagle | Ugnies vainikas', rarity: 'riboto', wear: 'fn', wearName: 'Factory New', float: 0.03, skaitiklis: false, value: 90000 },
+  { id: 'as-menulis', weapon: 'durklas', name: 'Durklas | Mėnulio pjūvis', rarity: 'riboto', wear: 'mw', wearName: 'Minimal Wear', float: 0.13, skaitiklis: false, value: 130000 },
+  { id: 'ak-aurora', weapon: 'm4a4', name: 'M4A4 | Auroros gija', rarity: 'slaptas', wear: 'ft', wearName: 'Field-Tested', float: 0.31, skaitiklis: false, value: 250000 },
+  { id: 'md-erelis', weapon: 'awp', name: 'AWP | Auksinis erelis', rarity: 'slaptas', wear: 'mw', wearName: 'Minimal Wear', float: 0.08, skaitiklis: false, value: 400000 },
+  { id: 'as-gintaras', weapon: 'karambitas', name: 'Karambitas | Kruvinas gintaras', rarity: 'slaptas', wear: 'fn', wearName: 'Factory New', float: 0.02, skaitiklis: false, value: 600000 },
+  { id: 'lk-audra', weapon: 'drugelis', name: 'Drugelis | Audros širdis', rarity: 'klasifikuotas', wear: 'bs', wearName: 'Battle-Scarred', float: 0.58, skaitiklis: false, value: 900000 },
+  { id: 'ak-saule', weapon: 'ak47', name: 'AK-47 | Saulėlydžio mitas', rarity: 'klasifikuotas', wear: 'mw', wearName: 'Minimal Wear', float: 0.14, skaitiklis: false, value: 1500000 },
+  { id: 'as-feniksas', weapon: 'karambitas', name: 'Karambitas | Fenikso plunksna', rarity: 'klasifikuotas', wear: 'fn', wearName: 'Factory New', float: 0.01, skaitiklis: true, value: 2500000 },
+  { id: 'md-zvaigzde', weapon: 'awp', name: 'AWP | Žvaigždžių lankas', rarity: 'klasifikuotas', wear: 'ft', wearName: 'Field-Tested', float: 0.19, skaitiklis: false, value: 4000000 },
+  { id: 'ps-neon', weapon: 'm4a1s', name: 'M4A1-S | Neono upė', rarity: 'klasifikuotas', wear: 'fn', wearName: 'Factory New', float: 0.04, skaitiklis: false, value: 6000000 },
+  { id: 'as-karuna', weapon: 'pirstines', name: 'Pirštinės | Karūnos ašara', rarity: 'itinretas', wear: 'fn', wearName: 'Factory New', float: 0.01, skaitiklis: false, value: 12000000 },
+  { id: 'ak-kalve', weapon: 'ak47', name: 'AK-47 | Dievų kalvė', rarity: 'itinretas', wear: 'mw', wearName: 'Minimal Wear', float: 0.07, skaitiklis: false, value: 25000000 },
+  { id: 'lk-amzinybe', weapon: 'karambitas', name: 'Karambitas | Amžinybės auksas', rarity: 'itinretas', wear: 'fn', wearName: 'Factory New', float: 0.01, skaitiklis: true, value: 50000000 },
 ];
 
 const SKIN_BY_ID = new Map(SKINS.map((s) => [s.id, s]));
@@ -79,6 +85,31 @@ const RARITY_BY_ID = new Map(RARITIES.map((r) => [r.id, r]));
 
 function byId(id) {
   return SKIN_BY_ID.get(id) || null;
+}
+
+function migrateByValue(value) {
+  let best = SKINS[0];
+  let diff = Infinity;
+  for (const s of SKINS) {
+    const d = Math.abs(s.value - Number(value));
+    if (d < diff) {
+      diff = d;
+      best = s;
+    }
+  }
+  return best.id;
+}
+
+async function migrateInventory(db) {
+  const rows = await db.all('SELECT id, skin_id FROM inventory');
+  const stmts = [];
+  for (const r of rows) {
+    if (byId(r.skin_id)) continue;
+    const n = Number(r.skin_id);
+    const next = migrateByValue(Number.isFinite(n) && n > 0 ? n : 0);
+    stmts.push(['UPDATE inventory SET skin_id = ? WHERE id = ? AND skin_id = ?', [next, r.id, r.skin_id]]);
+  }
+  if (stmts.length) await db.tx(stmts);
 }
 
 function chanceBp(input, target) {
@@ -128,7 +159,7 @@ const CASE_DEFS = [
   {
     id: 'smelis',
     name: 'Smėlio dėžė',
-    blurb: 'Dažniausiai Gatvės ir Dirbtuvės. Retas šuolis iki Lauko.',
+    blurb: 'Dažniausiai plataus vartojimo. Retas šuolis iki pramoninio.',
     drops: [
       { id: 'vx-dulkes', w: 420 },
       { id: 'sr-smelis', w: 280 },
@@ -142,7 +173,7 @@ const CASE_DEFS = [
   {
     id: 'naktis',
     name: 'Nakties dėžė',
-    blurb: 'Dirbtuvės ir Lauko, su maža Riboto tikimybe.',
+    blurb: 'Pramoninis ir kariuomenės, su maža riboto naudojimo tikimybe.',
     drops: [
       { id: 'ak-samanos', w: 120 },
       { id: 'kb-viela', w: 220 },
@@ -159,7 +190,7 @@ const CASE_DEFS = [
   {
     id: 'perkun',
     name: 'Perkūno dėžė',
-    blurb: 'Lauko ir Ribotas pagrindas, retas Slaptas.',
+    blurb: 'Kariuomenės ir riboto naudojimo pagrindas, retas slaptas.',
     drops: [
       { id: 'ak-baltija', w: 180 },
       { id: 'ps-samanos', w: 180 },
@@ -176,7 +207,7 @@ const CASE_DEFS = [
   {
     id: 'karuna',
     name: 'Karūnos dėžė',
-    blurb: 'Aukštesnės pakopos. Legendinis – labai retas, ne garantija.',
+    blurb: 'Aukštesnės pakopos. Itin retas – labai retas, ne garantija.',
     drops: [
       { id: 'ak-gintaras', w: 160 },
       { id: 'md-dumas', w: 150 },
@@ -318,6 +349,7 @@ function createApi(casino) {
       .then(({ item, eventId }) => {
         u.items.set(item.id, { skinId: item.skinId, createdAt: item.createdAt });
         pushFeed({ id: eventId, nick: u.name, kind: 'case', payload, createdAt: now });
+        if (casino.noteWager) casino.noteWager(u.name, 1, 'case');
         return { ok: true, item, skinId: skin.id, balance: u.balance, caseId: kase.id, items: dump(u) };
       })
       .catch(() => {
@@ -460,6 +492,7 @@ function createApi(casino) {
       .then(({ item, eventId }) => {
         if (item) u.items.set(item.id, { skinId: item.skinId, createdAt: item.createdAt });
         pushFeed({ id: eventId, nick: u.name, kind: 'upgrade', payload, createdAt: now });
+        if (casino.noteWager) casino.noteWager(u.name, won ? input : 0, 'upgrade');
         return {
           ok: true,
           won,
@@ -484,7 +517,32 @@ function createApi(casino) {
     return { done };
   }
 
-  return { ensureItems, openCase, buy, sell, upgrade, history, dump };
+  function grantCase(u, caseId) {
+    const kase = CASE_BY_ID.get(caseId);
+    if (!kase) return fail('Nežinoma dėžė');
+    if (!u.items) return fail('Inventorius dar kraunasi');
+    if (u.items.size >= MAX_ITEMS) return fail('Inventorius pilnas (' + MAX_ITEMS + ')');
+    const skin = rollDrop(kase);
+    const now = Date.now();
+    const payload = { caseId: kase.id, skinId: skin.id, value: skin.value, free: true };
+    const done = db
+      .transaction(async (tx) => {
+        const ins = await tx.run('INSERT INTO inventory (user_id, skin_id, created_at) VALUES (?, ?, ?)', [u.id, skin.id, now]);
+        const ev = await tx.run('INSERT INTO skin_events (user_id, nick, kind, payload, created_at) VALUES (?, ?, ?, ?, ?)', [u.id, u.name, 'case', JSON.stringify(payload), now]);
+        return { item: { id: ins.lastId, skinId: skin.id, createdAt: now }, eventId: ev.lastId };
+      })
+      .then(({ item, eventId }) => {
+        u.items.set(item.id, { skinId: item.skinId, createdAt: item.createdAt });
+        pushFeed({ id: eventId, nick: u.name, kind: 'case', payload, createdAt: now });
+        if (casino.noteWager) casino.noteWager(u.name, 1, 'case');
+        casino.changed();
+        return { ok: true, item, skinId: skin.id, balance: u.balance, caseId: kase.id, items: dump(u) };
+      })
+      .catch(() => ({ ok: false, error: 'VIP dėžės atidarymas nepavyko' }));
+    return { done };
+  }
+
+  return { ensureItems, openCase, buy, sell, upgrade, history, dump, grantCase };
 }
 
 module.exports = {
@@ -506,6 +564,8 @@ module.exports = {
   minInputFor,
   upgradeWins,
   sellPayout,
+  migrateByValue,
+  migrateInventory,
   caseMath,
   publicConfig,
   loadFeed,

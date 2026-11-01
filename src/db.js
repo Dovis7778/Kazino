@@ -107,14 +107,83 @@ CREATE INDEX IF NOT EXISTS skin_events_user ON skin_events(user_id, id DESC);
 `,
 };
 
-async function ensureUserColumns(db) {
-  // Sena bazė (be last_daily) papildoma, eilučių neperrašant.
+const EXTRA = {
+  sqlite: `
+CREATE TABLE IF NOT EXISTS holds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mission_progress (
+  user_id INTEGER NOT NULL,
+  mission_id TEXT NOT NULL,
+  period_key TEXT NOT NULL,
+  progress INTEGER NOT NULL DEFAULT 0,
+  claimed INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, mission_id, period_key)
+);
+CREATE TABLE IF NOT EXISTS tournament_scores (
+  t_key TEXT NOT NULL,
+  user_id INTEGER NOT NULL,
+  nick TEXT NOT NULL,
+  score INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (t_key, user_id)
+);
+CREATE TABLE IF NOT EXISTS tournament_paid (
+  t_key TEXT PRIMARY KEY,
+  paid_at INTEGER NOT NULL
+);`,
+  pg: `
+CREATE TABLE IF NOT EXISTS holds (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  kind TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  amount BIGINT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mission_progress (
+  user_id BIGINT NOT NULL,
+  mission_id TEXT NOT NULL,
+  period_key TEXT NOT NULL,
+  progress BIGINT NOT NULL DEFAULT 0,
+  claimed BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, mission_id, period_key)
+);
+CREATE TABLE IF NOT EXISTS tournament_scores (
+  t_key TEXT NOT NULL,
+  user_id BIGINT NOT NULL,
+  nick TEXT NOT NULL,
+  score BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (t_key, user_id)
+);
+CREATE TABLE IF NOT EXISTS tournament_paid (
+  t_key TEXT PRIMARY KEY,
+  paid_at BIGINT NOT NULL
+);`,
+};
+
+async function addCol(db, table, name, ddl) {
   if (db.kind === 'sqlite') {
-    const cols = db.sql.prepare('PRAGMA table_info(users)').all();
-    if (!cols.some((c) => c.name === 'last_daily')) db.sql.exec('ALTER TABLE users ADD COLUMN last_daily INTEGER NOT NULL DEFAULT 0');
+    const cols = db.sql.prepare('PRAGMA table_info(' + table + ')').all();
+    if (!cols.some((c) => c.name === name)) db.sql.exec('ALTER TABLE ' + table + ' ADD COLUMN ' + ddl);
     return;
   }
-  await db.pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily BIGINT NOT NULL DEFAULT 0');
+  await db.pool.query('ALTER TABLE ' + table + ' ADD COLUMN IF NOT EXISTS ' + ddl);
+}
+
+async function ensureUserColumns(db) {
+  if (db.kind === 'sqlite') db.sql.exec(EXTRA.sqlite);
+  else await db.pool.query(EXTRA.pg);
+  await addCol(db, 'users', 'last_daily', db.kind === 'sqlite' ? 'last_daily INTEGER NOT NULL DEFAULT 0' : 'last_daily BIGINT NOT NULL DEFAULT 0');
+  await addCol(db, 'users', 'rake_pending', db.kind === 'sqlite' ? 'rake_pending INTEGER NOT NULL DEFAULT 0' : 'rake_pending BIGINT NOT NULL DEFAULT 0');
+  await addCol(db, 'users', 'last_vip_case', db.kind === 'sqlite' ? 'last_vip_case INTEGER NOT NULL DEFAULT 0' : 'last_vip_case BIGINT NOT NULL DEFAULT 0');
+  await addCol(db, 'inventory', 'wear', "wear TEXT NOT NULL DEFAULT 'ft'");
+  await addCol(db, 'inventory', 'float_bp', db.kind === 'sqlite' ? 'float_bp INTEGER NOT NULL DEFAULT 250000' : 'float_bp BIGINT NOT NULL DEFAULT 250000');
+  await addCol(db, 'inventory', 'skaitiklis', db.kind === 'sqlite' ? 'skaitiklis INTEGER NOT NULL DEFAULT 0' : 'skaitiklis BIGINT NOT NULL DEFAULT 0');
 }
 
 const toPg = (sql) => {

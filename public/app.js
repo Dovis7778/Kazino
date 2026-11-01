@@ -386,9 +386,19 @@ $('resetBal').onclick = async () => {
 };
 
 /* ---------- skirtukai ---------- */
+function openProfile() {
+  section = 'casino';
+  $('sec-up').classList.add('hidden');
+  $('sec-casino').classList.remove('hidden');
+  $('topPanel').classList.add('hidden');
+  $('profPanel').classList.remove('hidden');
+  applyChrome('profile');
+  renderProfile();
+  window.scrollTo(0, 0);
+}
 function applyChrome(view) {
   document.body.classList.add('in-app');
-  ['lobby', 'kazino', 'up', 'profile'].forEach((v) => document.body.classList.toggle('view-' + v, v === view));
+  ['lobby', 'kazino', 'up', 'kovos', 'profile'].forEach((v) => document.body.classList.toggle('view-' + v, v === view));
   qsa('#bottomNav [data-bnav]').forEach((b) => b.classList.toggle('on', b.dataset.bnav === view));
   if (view !== 'profile' && $('profPanel')) $('profPanel').classList.add('hidden');
 }
@@ -396,7 +406,21 @@ function setGameTab(name) {
   tab = name;
   qsa('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
   qsa('.game').forEach((g) => g.classList.toggle('hidden', g.id !== 'g-' + name));
-  if (section === 'casino') applyChrome(name === 'home' ? 'lobby' : 'kazino');
+  if (name === 'lobby' || name === 'kovos' || name === 'home' || section !== 'up') {
+    section = 'casino';
+    $('sec-casino').classList.remove('hidden');
+    $('sec-up').classList.add('hidden');
+    if ($('gameNav')) $('gameNav').classList.remove('hidden');
+    if ($('upNav')) $('upNav').classList.add('hidden');
+  }
+  const view = name === 'lobby' ? 'lobby' : name === 'kovos' ? 'kovos' : 'kazino';
+  applyChrome(view);
+  const active = document.querySelector('#gameNav .tab.active');
+  if (active && active.parentElement && active.parentElement.scrollTo) {
+    const left = active.offsetLeft - 16;
+    active.parentElement.scrollTo(Math.max(0, left), 0);
+  }
+  if (window.scrollX) window.scrollTo(0, window.scrollY);
 }
 qsa('.tab').forEach((t) => {
   t.onclick = () => setGameTab(t.dataset.tab);
@@ -451,12 +475,26 @@ socket.on('state', (st) => {
     $('meAvatar').textContent = p.avatar;
     const el = $('myBal');
     if (p.balance !== myBal) {
+      const from = myBal;
+      const to = p.balance;
       el.classList.remove('flash-up', 'flash-down');
       void el.offsetWidth;
-      el.classList.add(p.balance > myBal ? 'flash-up' : 'flash-down');
+      el.classList.add(to > from ? 'flash-up' : 'flash-down');
+      myBal = to;
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduce || !window.requestAnimationFrame) el.textContent = fmt(to);
+      else {
+        const t0 = performance.now();
+        const step = (now) => {
+          if (myBal !== to) return;
+          const k = Math.min(1, (now - t0) / 420);
+          const eased = 1 - Math.pow(1 - k, 3);
+          el.textContent = fmt(Math.round(from + (to - from) * eased));
+          if (k < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }
     }
-    myBal = p.balance;
-    el.textContent = fmt(myBal);
   }
   renderPlayers();
   renderProfile();
@@ -1096,20 +1134,37 @@ function shadeHex(hex, amt) {
   const ch = (shift) => Math.max(0, Math.min(255, ((n >> shift) & 255) + amt));
   return '#' + [ch(16), ch(8), ch(0)].map((x) => x.toString(16).padStart(2, '0')).join('');
 }
-function weaponSvg(weapon, color) {
+function weaponSvg(weapon, color, seed) {
+  const alias = { ak: 'ak47', medziotojas: 'awp', varnis: 'deagle', pulsas: 'm4a4', kibirkstis: 'usp', asmenys: 'karambitas', lokys: 'pirstines', sratas: 'mp9' };
+  weapon = alias[weapon] || weapon || 'ak47';
   const dark = shadeHex(color, -48);
   const light = shadeHex(color, 48);
+  let h = 0;
+  const key = String(seed || weapon);
+  for (let i = 0; i < key.length; i++) h = ((h << 5) - h + key.charCodeAt(i)) | 0;
+  h = Math.abs(h);
+  const gid = 'wg' + h.toString(36);
   const body = {
-    ak: '<path d="M18 58h70l8-10h78l10 6h28v8H108l-6 8H28l-8 6H18z" fill="' + color + '"/><path d="M40 70h18v16h-10l-8-16z" fill="' + dark + '"/><circle cx="200" cy="58" r="6" fill="' + light + '"/>',
-    varnis: '<path d="M30 48h70v16H78l-8 14H54l6-14H30z" fill="' + color + '"/><rect x="100" y="52" width="36" height="8" rx="2" fill="' + dark + '"/>',
-    pulsas: '<path d="M24 50h90l12-8h40v10H120l-8 12H36l-8 8H24z" fill="' + color + '"/><rect x="48" y="62" width="14" height="18" fill="' + dark + '"/>',
-    medziotojas: '<path d="M12 54h150l8-6h50v8H168l-6 8H20z" fill="' + color + '"/><circle cx="214" cy="54" r="7" fill="' + light + '"/><rect x="70" y="62" width="10" height="20" fill="' + dark + '"/>',
-    sratas: '<path d="M28 46h60l20 8h40v12H100l-16 10H40l-8 8H28z" fill="' + color + '"/><rect x="48" y="66" width="16" height="16" fill="' + dark + '"/>',
-    kibirkstis: '<path d="M48 46h54v14H78l-6 16H58l5-16H48z" fill="' + color + '"/><rect x="102" y="50" width="28" height="7" fill="' + dark + '"/>',
-    asmenys: '<path d="M36 78 150 28l14 10L58 86z" fill="' + color + '"/><path d="M150 28l28-8 6 16-20 6z" fill="' + light + '"/><path d="M36 78l-8 10 22 4z" fill="' + dark + '"/>',
-    lokys: '<path d="M16 48h80l10-12h70v14H110l-8 14H28z" fill="' + color + '"/><rect x="36" y="62" width="46" height="12" fill="' + dark + '"/><circle cx="190" cy="46" r="8" fill="' + light + '"/>',
-  }[weapon] || '<rect x="30" y="40" width="180" height="28" rx="8" fill="' + color + '"/>';
-  return '<svg viewBox="0 0 240 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' + body + '</svg>';
+    ak47: '<path d="M16 58h78l6-8h86l8 5h30v8H112l-6 8H30l-10 8H16z" fill="url(#' + gid + ')"/><path d="M42 72h16v16H48z" fill="' + dark + '"/>',
+    m4a4: '<path d="M22 52h84l10-8h70v8H118l-8 12H34l-8 10H22z" fill="url(#' + gid + ')"/><rect x="50" y="66" width="12" height="18" fill="' + dark + '"/>',
+    m4a1s: '<path d="M28 54h70l8-6h48v8H108l-6 10H40l-8 8H28z" fill="url(#' + gid + ')"/><rect x="52" y="66" width="10" height="14" rx="2" fill="' + dark + '"/>',
+    awp: '<path d="M8 56h168l6-6h46v7H180l-4 8H16z" fill="url(#' + gid + ')"/><circle cx="214" cy="54" r="6" fill="' + light + '"/><rect x="78" y="64" width="8" height="18" fill="' + dark + '"/>',
+    deagle: '<path d="M36 44h78v18H90l-10 16H62l8-16H36z" fill="url(#' + gid + ')"/><rect x="114" y="50" width="34" height="8" rx="2" fill="' + dark + '"/>',
+    usp: '<path d="M52 46h48v14H80l-6 16H62l6-16H52z" fill="url(#' + gid + ')"/><rect x="100" y="50" width="26" height="6" fill="' + dark + '"/>',
+    glock: '<path d="M48 48h52v12H84l-4 18H66l4-18H48z" fill="url(#' + gid + ')"/><rect x="100" y="52" width="22" height="6" fill="' + light + '"/>',
+    p250: '<path d="M58 50h40v12H84l-6 14H68l4-14H58z" fill="url(#' + gid + ')"/><rect x="98" y="54" width="18" height="5" fill="' + dark + '"/>',
+    mp9: '<path d="M20 48h96l14-8h36v10H124l-8 12H32l-8 8H20z" fill="url(#' + gid + ')"/><rect x="44" y="62" width="12" height="16" fill="' + dark + '"/>',
+    karambitas: '<path d="M40 82c40-10 78-36 112-58l16 8C124 60 86 84 48 92z" fill="url(#' + gid + ')"/><path d="M40 82l-10 8 18 2z" fill="' + dark + '"/>',
+    drugelis: '<path d="M70 78 148 36l10 8-70 40z" fill="url(#' + gid + ')"/><path d="M148 36l22-14 8 12-18 10z" fill="' + light + '"/><path d="M70 78l-16 6 10 10z" fill="' + dark + '"/>',
+    durklas: '<path d="M108 16l14 8-46 62H62z" fill="url(#' + gid + ')"/><path d="M62 86h28l-6 10H70z" fill="' + dark + '"/>',
+    pirstines: '<path d="M28 58c8-22 22-28 32-18 6-16 20-18 28-6 8-14 22-12 28 2 10-8 24-2 26 12 8 2 16 10 14 22H40z" fill="url(#' + gid + ')"/><path d="M36 70h120v10H36z" fill="' + dark + '" opacity=".65"/>',
+  }[weapon] || '<rect x="30" y="42" width="180" height="24" rx="8" fill="url(#' + gid + ')"/>';
+  const motif = h % 3 === 0
+    ? '<path d="M24 78l190-46M24 64l190-46" stroke="' + light + '" stroke-width="2" opacity=".45"/>'
+    : h % 3 === 1
+      ? '<g fill="' + light + '" opacity=".55"><circle cx="46" cy="52" r="2.5"/><circle cx="70" cy="48" r="2.5"/><circle cx="94" cy="54" r="2.5"/><circle cx="118" cy="50" r="2.5"/><circle cx="142" cy="46" r="2.5"/></g>'
+      : '<path d="M30 44h150M30 58h130M30 72h90" stroke="' + light + '" stroke-width="1.4" opacity=".4"/>';
+  return '<svg viewBox="0 0 240 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="' + light + '"/><stop offset=".55" stop-color="' + color + '"/><stop offset="1" stop-color="' + dark + '"/></linearGradient></defs>' + body + motif + '</svg>';
 }
 function skinById(id) {
   return CFG && CFG.skins ? CFG.skins.items.find((s) => s.id === id) : null;
@@ -1137,7 +1192,7 @@ function skinCardHtml(skin, opts) {
   opts = opts || {};
   const r = rarityOf(skin.rarity);
   const w = wearOf(skin.wear);
-  return '<button type="button" class="skin-card' + (opts.selected ? ' sel' : '') + '" style="--r:' + r.color + '" ' + (opts.attrs || '') + '><span class="rstrip" style="background:' + r.color + '"></span><div class="art">' + weaponSvg(skin.weapon, r.color) + '</div><div class="rname">' + esc(r.name) + '</div><div class="sname">' + esc(skin.name) + '</div><div class="wear">' + esc(w.name) + '</div><div class="price">' + fmt(opts.price != null ? opts.price : skin.value) + '</div></button>';
+  return '<button type="button" class="skin-card' + (opts.selected ? ' sel' : '') + '" style="--r:' + r.color + '" ' + (opts.attrs || '') + '><span class="rstrip" style="background:' + r.color + '"></span><div class="art">' + weaponSvg(skin.weapon, r.color, skin.id) + '</div><div class="rname">' + esc(r.name) + (skin.skaitiklis ? ' · Skaitiklis' : '') + '</div><div class="sname">' + esc(skin.name) + '</div><div class="wear">' + esc(w ? w.name : '') + (skin.float != null ? ' · ' + Number(skin.float).toFixed(2) : '') + '</div><div class="price">' + fmt(opts.price != null ? opts.price : skin.value) + '</div></button>';
 }
 function arcPath(cx, cy, r, a0, a1) {
   const span = a1 - a0;
@@ -1876,21 +1931,13 @@ function wireShell() {
       buzz(10);
       const k = b.dataset.bnav;
       if (k === 'up') setSection('up');
-      else if (k === 'profile') {
-        section = 'casino';
-        $('sec-up').classList.add('hidden');
-        $('sec-casino').classList.remove('hidden');
-        $('topPanel').classList.add('hidden');
-        $('profPanel').classList.remove('hidden');
-        applyChrome('profile');
-        renderProfile();
-        window.scrollTo(0, 0);
-      } else if (k === 'kazino') {
-        setSection('casino');
-        setGameTab(tab === 'home' ? 'bj' : tab);
-      } else {
-        setSection('casino');
+      else if (k === 'profile') openProfile();
+      else if (k === 'kazino') {
         setGameTab('home');
+      } else if (k === 'kovos') {
+        setGameTab('kovos');
+      } else {
+        setGameTab('lobby');
         window.scrollTo(0, 0);
       }
     };
@@ -1909,4 +1956,5 @@ setInterval(pollHealth, 5000);
 setTimeout(pollHealth, 1200);
 
 /* ---------- paleidimas ---------- */
+window.KZ = { $, qsa, socket, send, fmt, toast, esc, setGameTab, setSection, applyChrome, openProfile, skinById, weaponSvg, rarityOf, wearOf };
 bootConfig(0);

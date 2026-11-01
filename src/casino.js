@@ -238,6 +238,8 @@ class Casino {
         [c, p.staked, net, net, now, u.id],
       ]);
       touched.push(u);
+      const kind = table.constructor && table.constructor.name === 'BlackjackTable' ? 'bj' : 'wager';
+      this.noteWager(name, p.staked, kind);
     }
     st.push(['DELETE FROM open_bets WHERE round_key = ?', [table.roundKey]]);
     table.escrow.clear();
@@ -279,7 +281,12 @@ class Casino {
       [u]
     );
     this.scheduleLeaders();
+    this.noteWager(name, bet, 'wager');
     this.changed();
+  }
+
+  noteWager(name, amount, kind) {
+    if (this.onWager) this.onWager(name, amount, kind);
   }
 
   topup(u, amount) {
