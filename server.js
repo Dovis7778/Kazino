@@ -2,6 +2,7 @@
 // Kazino su žaidimo pinigais (ne tikrais) – vienas bendras kelių žaidėjų serveris.
 // Visa žaidimų logika ir atsitiktinumas vyksta serveryje, klientas tik rodo būseną.
 // Paskyros, balansai ir statistika saugomi DB (SQLite failas arba PostgreSQL).
+const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const express = require('express');
@@ -16,6 +17,7 @@ const { TOPUP_MAX, START_BALANCE, isCents } = require('./src/money');
 const skinsMod = require('./src/skins');
 const progress = require('./src/progress');
 const { createArcade } = require('./src/arcade');
+const { createFair } = require('./src/fair');
 const skinsModMigrate = require('./src/skins');
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -31,6 +33,18 @@ async function createServer(opts = {}) {
   const app = express();
   app.disable('x-powered-by');
   if (TRUST_PROXY) app.set('trust proxy', 1);
+  const distIndex = path.join(__dirname, 'dist', 'index.html');
+  if (fs.existsSync(distIndex)) {
+    app.get('/', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.sendFile(distIndex);
+    });
+    app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), {
+      immutable: true,
+      maxAge: '30d',
+      setHeaders(res) { res.setHeader('Cache-Control', 'public, max-age=2592000, immutable'); },
+    }));
+  }
   app.use(express.static(path.join(__dirname, 'public'), {
     maxAge: '1h',
     setHeaders(res, filePath) {
@@ -62,6 +76,7 @@ async function createServer(opts = {}) {
     }
   });
   await casino.init();
+  casino.fair = createFair(db);
   const skins = skinsMod.createApi(casino);
   casino.skinsApi = skins;
   arcade = createArcade(casino, db);
@@ -422,7 +437,7 @@ async function createServer(opts = {}) {
 
     const skinOp = async (u, cb, run) => {
       await skins.ensureItems(u);
-      const r = run();
+      const r = await run();
       if (r.error) return fail(cb, r.error);
       const done = await r.done;
       if (!done.ok) return fail(cb, done.error || 'Nepavyko');
@@ -460,6 +475,57 @@ async function createServer(opts = {}) {
       const u = need(cb);
       if (!u) return;
       await skinOp(u, cb, () => skins.upgrade(u, body));
+    });
+
+    on('case:unbox', async (id, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      await skins.ensureItems(u);
+      const r = await skins.openUnopened(u, Number(id));
+      if (r.error) return fail(cb, r.error);
+      const done = await r.done;
+      if (!done.ok) return fail(cb, done.error || 'Nepavyko');
+      ok(cb, done);
+    });
+
+    on('case:list', async (_d, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      ok(cb, { cases: await skins.listUnopened(u) });
+    });
+
+    on('fair:get', async (_d, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      ok(cb, await casino.fair.view(u));
+    });
+
+    on('fair:client', async (seed, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      const r = await casino.fair.setClient(u, seed);
+      if (r.error) return fail(cb, r.error);
+      ok(cb, r);
+    });
+
+    on('fair:rotate', async (_d, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      ok(cb, await casino.fair.rotate(u));
+    });
+
+    on('fair:check', async (d, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      d = d || {};
+      if (d.kind === 'crash') {
+        if (!d.serverSeed) return fail(cb, 'Reikia serverio sėklos');
+        const { crashFromSeed } = require('./src/fair');
+        return ok(cb, { crashAt: crashFromSeed(d.serverSeed) });
+      }
+      const { fairInt } = require('./src/fair');
+      if (!d.serverSeed || !d.clientSeed || d.nonce == null || !d.n) return fail(cb, 'Įrašyk sėklas, nonce ir modulį');
+      ok(cb, { roll: fairInt(d.serverSeed, d.clientSeed, Number(d.nonce), Number(d.n), Number(d.cursor) || 0) });
     });
 
     arcade.bind(socket, { me, need, fail, ok });

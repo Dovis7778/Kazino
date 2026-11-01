@@ -393,7 +393,8 @@ function openProfile() {
   $('topPanel').classList.add('hidden');
   $('profPanel').classList.remove('hidden');
   applyChrome('profile');
-  renderProfile();
+  if (window.renderProfile) window.renderProfile();
+  else renderProfile();
   window.scrollTo(0, 0);
 }
 function applyChrome(view) {
@@ -421,6 +422,7 @@ function setGameTab(name) {
     active.parentElement.scrollTo(Math.max(0, left), 0);
   }
   if (window.scrollX) window.scrollTo(0, window.scrollY);
+  if (typeof window.onGameTab === 'function') window.onGameTab(name);
 }
 qsa('.tab').forEach((t) => {
   t.onclick = () => setGameTab(t.dataset.tab);
@@ -1531,7 +1533,13 @@ function itemCards() {
   return INV.map((it) => {
     const s = skinById(it.skinId);
     if (!s) return '';
-    return skinCardHtml(s, { selected: picked.has(it.id), attrs: 'data-item="' + it.id + '"' });
+    const view = Object.assign({}, s, {
+      value: it.value || s.value,
+      wear: it.wear || s.wear,
+      skaitiklis: !!it.skaitiklis,
+      float: it.float != null ? it.float : s.float,
+    });
+    return skinCardHtml(view, { selected: picked.has(it.id), price: view.value, attrs: 'data-item="' + it.id + '"' });
   }).join('');
 }
 function togglePick(e) {
@@ -1546,8 +1554,7 @@ function selectedSkinValue() {
   let v = 0;
   for (const id of picked) {
     const it = INV.find((x) => x.id === id);
-    const s = it && skinById(it.skinId);
-    if (s) v += s.value;
+    if (it) v += it.value || (skinById(it.skinId) ? skinById(it.skinId).value : 0);
   }
   return v;
 }
@@ -1956,5 +1963,6 @@ setInterval(pollHealth, 5000);
 setTimeout(pollHealth, 1200);
 
 /* ---------- paleidimas ---------- */
-window.KZ = { $, qsa, socket, send, fmt, toast, esc, setGameTab, setSection, applyChrome, openProfile, skinById, weaponSvg, rarityOf, wearOf };
+window.renderProfile = renderProfile;
+window.KZ = { $, qsa, socket, send, fmt, toast, esc, setGameTab, setSection, applyChrome, openProfile, skinById, weaponSvg, rarityOf, wearOf, blip, celebrate, buzz, storeGet, storeSet, getCfg: () => CFG, getInv: () => INV, getBal: () => myBal };
 bootConfig(0);

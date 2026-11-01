@@ -135,6 +135,34 @@ CREATE TABLE IF NOT EXISTS tournament_scores (
 CREATE TABLE IF NOT EXISTS tournament_paid (
   t_key TEXT PRIMARY KEY,
   paid_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fair_users (
+  user_id INTEGER PRIMARY KEY,
+  server_seed TEXT NOT NULL,
+  client_seed TEXT NOT NULL,
+  nonce INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS fair_revealed (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  server_seed TEXT NOT NULL,
+  client_seed TEXT NOT NULL,
+  nonce INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fair_rolls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  nonce INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  detail TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS unopened_cases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  case_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL
 );`,
   pg: `
 CREATE TABLE IF NOT EXISTS holds (
@@ -163,6 +191,34 @@ CREATE TABLE IF NOT EXISTS tournament_scores (
 CREATE TABLE IF NOT EXISTS tournament_paid (
   t_key TEXT PRIMARY KEY,
   paid_at BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fair_users (
+  user_id BIGINT PRIMARY KEY,
+  server_seed TEXT NOT NULL,
+  client_seed TEXT NOT NULL,
+  nonce BIGINT NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS fair_revealed (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  server_seed TEXT NOT NULL,
+  client_seed TEXT NOT NULL,
+  nonce BIGINT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fair_rolls (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  nonce BIGINT NOT NULL,
+  kind TEXT NOT NULL,
+  detail TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS unopened_cases (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  case_id TEXT NOT NULL,
+  created_at BIGINT NOT NULL
 );`,
 };
 
@@ -184,6 +240,7 @@ async function ensureUserColumns(db) {
   await addCol(db, 'inventory', 'wear', "wear TEXT NOT NULL DEFAULT 'ft'");
   await addCol(db, 'inventory', 'float_bp', db.kind === 'sqlite' ? 'float_bp INTEGER NOT NULL DEFAULT 250000' : 'float_bp BIGINT NOT NULL DEFAULT 250000');
   await addCol(db, 'inventory', 'skaitiklis', db.kind === 'sqlite' ? 'skaitiklis INTEGER NOT NULL DEFAULT 0' : 'skaitiklis BIGINT NOT NULL DEFAULT 0');
+  await addCol(db, 'inventory', 'value_cents', db.kind === 'sqlite' ? 'value_cents INTEGER NOT NULL DEFAULT 0' : 'value_cents BIGINT NOT NULL DEFAULT 0');
 }
 
 const toPg = (sql) => {

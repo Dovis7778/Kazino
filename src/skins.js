@@ -26,12 +26,14 @@ const RARITIES = [
 ];
 
 const WEARS = [
-  { id: 'fn', name: 'Factory New', mult: 1.2, float: 0.03 },
-  { id: 'mw', name: 'Minimal Wear', mult: 1, float: 0.11 },
-  { id: 'ft', name: 'Field-Tested', mult: 0.78, float: 0.25 },
-  { id: 'ww', name: 'Well-Worn', mult: 0.58, float: 0.41 },
-  { id: 'bs', name: 'Battle-Scarred', mult: 0.42, float: 0.62 },
+  { id: 'fn', name: 'Factory New', mult: 1, bp: 1000, floatMin: 0, floatMax: 70000 },
+  { id: 'mw', name: 'Minimal Wear', mult: 0.85, bp: 850, floatMin: 70000, floatMax: 150000 },
+  { id: 'ft', name: 'Field-Tested', mult: 0.7, bp: 700, floatMin: 150000, floatMax: 380000 },
+  { id: 'ww', name: 'Well-Worn', mult: 0.62, bp: 620, floatMin: 380000, floatMax: 450000 },
+  { id: 'bs', name: 'Battle-Scarred', mult: 0.55, bp: 550, floatMin: 450000, floatMax: 1000000 },
 ];
+const ST_BP = 1500;
+const ST_CHANCE_DEN = 10;
 
 const WEAPONS = [
   { id: 'ak47', name: 'AK-47' },
@@ -101,15 +103,46 @@ function migrateByValue(value) {
 }
 
 async function migrateInventory(db) {
-  const rows = await db.all('SELECT id, skin_id FROM inventory');
+  const rows = await db.all('SELECT id, skin_id, value_cents FROM inventory');
   const stmts = [];
   for (const r of rows) {
-    if (byId(r.skin_id)) continue;
-    const n = Number(r.skin_id);
-    const next = migrateByValue(Number.isFinite(n) && n > 0 ? n : 0);
-    stmts.push(['UPDATE inventory SET skin_id = ? WHERE id = ? AND skin_id = ?', [next, r.id, r.skin_id]]);
+    if (!byId(r.skin_id)) {
+      const n = Number(r.skin_id);
+      const next = migrateByValue(Number.isFinite(n) && n > 0 ? n : 0);
+      stmts.push(['UPDATE inventory SET skin_id = ? WHERE id = ? AND skin_id = ?', [next, r.id, r.skin_id]]);
+    }
+    if (!Number(r.value_cents)) {
+      const skin = byId(r.skin_id) || byId(migrateByValue(0));
+      stmts.push(["UPDATE inventory SET wear = 'fn', skaitiklis = 0, float_bp = 3000, value_cents = ? WHERE id = ? AND value_cents = 0", [skin.value, r.id]]);
+    }
   }
   if (stmts.length) await db.tx(stmts);
+}
+
+function wearById(id) {
+  return WEARS.find((w) => w.id === id) || WEARS[0];
+}
+
+function priceOf(base, wearId, st) {
+  const w = wearById(wearId);
+  const m = w.bp * (st ? ST_BP : 1000);
+  return Math.max(1, Math.floor(Number(base) * m / 1000000));
+}
+
+function dropExpected(base) {
+  let sum = 0;
+  for (const w of WEARS) {
+    sum += priceOf(base, w.id, false) * (ST_CHANCE_DEN - 1);
+    sum += priceOf(base, w.id, true);
+  }
+  return sum / (WEARS.length * ST_CHANCE_DEN);
+}
+
+function instanceFromRolls(base, rolls) {
+  const w = WEARS[rolls[0] % WEARS.length];
+  const st = rolls[1] % ST_CHANCE_DEN === 0;
+  const floatBp = w.floatMin + (rolls[2] % Math.max(1, w.floatMax - w.floatMin));
+  return { wear: w.id, skaitiklis: st, floatBp, value: priceOf(base, w.id, st) };
 }
 
 function chanceBp(input, target) {
@@ -144,7 +177,7 @@ function sellPayout(value) {
 
 function caseMath(drops) {
   const weight = drops.reduce((s, d) => s + d.w, 0);
-  const ev = drops.reduce((s, d) => s + d.w * byId(d.id).value, 0) / weight;
+  const ev = drops.reduce((s, d) => s + d.w * dropExpected(byId(d.id).value), 0) / weight;
   const price = Math.max(1, Math.round(ev / TARGET_RTP));
   return {
     weight,
@@ -299,7 +332,19 @@ function createApi(casino) {
   function dump(u) {
     return [...u.items.entries()]
       .sort((a, b) => b[0] - a[0])
-      .map(([id, v]) => ({ id, skinId: v.skinId, createdAt: v.createdAt }));
+      .map(([id, v]) => ({
+        id,
+        skinId: v.skinId,
+        createdAt: v.createdAt,
+        value: v.value,
+        wear: v.wear,
+        float: v.floatBp != null ? v.floatBp / 1000000 : v.float,
+        skaitiklis: !!v.skaitiklis,
+      }));
+  }
+
+  function memItem(id, skinId, now, inst) {
+    return { id, skinId, createdAt: now, value: inst.value, wear: inst.wear, floatBp: inst.floatBp, skaitiklis: inst.skaitiklis ? 1 : 0 };
   }
 
   function ensureItems(u) {
@@ -307,14 +352,28 @@ function createApi(casino) {
     let p = loading.get(u.id);
     if (!p) {
       p = db
-        .all('SELECT id, skin_id AS skinId, created_at AS createdAt FROM inventory WHERE user_id = ? ORDER BY id', [u.id])
+        .all('SELECT id, skin_id AS skinId, created_at AS createdAt, wear, float_bp AS floatBp, skaitiklis, value_cents AS value FROM inventory WHERE user_id = ? ORDER BY id', [u.id])
         .then((rows) => {
-          if (!u.items) u.items = new Map(rows.map((r) => [Number(r.id), { skinId: r.skinId, createdAt: Number(r.createdAt) }]));
+          if (!u.items) {
+            u.items = new Map(rows.map((r) => [Number(r.id), {
+              skinId: r.skinId,
+              createdAt: Number(r.createdAt),
+              value: Number(r.value) || (byId(r.skinId) ? byId(r.skinId).value : 0),
+              wear: r.wear || 'fn',
+              floatBp: Number(r.floatBp) || 3000,
+              skaitiklis: Number(r.skaitiklis) ? 1 : 0,
+            }]));
+          }
         })
         .finally(() => loading.delete(u.id));
       loading.set(u.id, p);
     }
     return p;
+  }
+
+  async function takeRolls(u, kind, ns) {
+    if (casino.fair) return casino.fair.drawMany(u, kind, ns);
+    return { rolls: ns.map((n) => rng.int(n)), nonce: null, serverHash: null, clientSeed: null };
   }
 
   function fail(msg) {
@@ -326,31 +385,34 @@ function createApi(casino) {
     return rows.map(mapEvent);
   }
 
-  function openCase(u, caseId) {
+  async function openCase(u, caseId) {
     const kase = CASE_BY_ID.get(caseId);
     if (!kase) return fail('Nežinoma dėžė');
     if (!u.items) return fail('Inventorius dar kraunasi');
     if (u.items.size >= MAX_ITEMS) return fail('Inventorius pilnas (' + MAX_ITEMS + ')');
     if (u.balance < kase.price) return fail('Nepakanka balanso');
-    const skin = rollDrop(kase);
+    const weight = kase.drops.reduce((s, d) => s + d.w, 0);
+    const fair = await takeRolls(u, 'case', [weight, WEARS.length, ST_CHANCE_DEN, 1000000]);
+    const skin = byId(rngPick(kase.drops, fair.rolls[0]));
+    const inst = instanceFromRolls(skin.value, fair.rolls.slice(1));
     const now = Date.now();
     u.balance -= kase.price;
     casino.scheduleLeaders();
     casino.changed();
-    const payload = { caseId: kase.id, skinId: skin.id, value: skin.value };
+    const payload = { caseId: kase.id, skinId: skin.id, value: inst.value, wear: inst.wear, skaitiklis: !!inst.skaitiklis, nonce: fair.nonce, serverHash: fair.serverHash };
     const done = db
       .transaction(async (tx) => {
         const upd = await tx.run('UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?', [kase.price, u.id, kase.price]);
         if (upd.changes !== 1) throw new Error('BALANCE');
-        const ins = await tx.run('INSERT INTO inventory (user_id, skin_id, created_at) VALUES (?, ?, ?)', [u.id, skin.id, now]);
+        const ins = await tx.run('INSERT INTO inventory (user_id, skin_id, created_at, wear, float_bp, skaitiklis, value_cents) VALUES (?, ?, ?, ?, ?, ?, ?)', [u.id, skin.id, now, inst.wear, inst.floatBp, inst.skaitiklis ? 1 : 0, inst.value]);
         const ev = await tx.run('INSERT INTO skin_events (user_id, nick, kind, payload, created_at) VALUES (?, ?, ?, ?, ?)', [u.id, u.name, 'case', JSON.stringify(payload), now]);
-        return { item: { id: ins.lastId, skinId: skin.id, createdAt: now }, eventId: ev.lastId };
+        return { item: memItem(ins.lastId, skin.id, now, inst), eventId: ev.lastId };
       })
       .then(({ item, eventId }) => {
-        u.items.set(item.id, { skinId: item.skinId, createdAt: item.createdAt });
+        u.items.set(item.id, item);
         pushFeed({ id: eventId, nick: u.name, kind: 'case', payload, createdAt: now });
         if (casino.noteWager) casino.noteWager(u.name, 1, 'case');
-        return { ok: true, item, skinId: skin.id, balance: u.balance, caseId: kase.id, items: dump(u) };
+        return { ok: true, item, skinId: skin.id, balance: u.balance, caseId: kase.id, items: dump(u), fair: payload };
       })
       .catch(() => {
         u.balance += kase.price;
@@ -360,32 +422,43 @@ function createApi(casino) {
     return { done };
   }
 
-  function buy(u, skinId) {
+  function rngPick(drops, roll) {
+    let r = roll;
+    for (const d of drops) {
+      if (r < d.w) return d.id;
+      r -= d.w;
+    }
+    return drops[drops.length - 1].id;
+  }
+
+  async function buy(u, skinId) {
     const skin = byId(skinId);
     if (!skin) return fail('Nežinomas skinas');
     if (!u.items) return fail('Inventorius dar kraunasi');
     if (u.items.size >= MAX_ITEMS) return fail('Inventorius pilnas (' + MAX_ITEMS + ')');
-    if (u.balance < skin.value) return fail('Nepakanka balanso');
+    const fair = await takeRolls(u, 'shop', [WEARS.length, ST_CHANCE_DEN, 1000000]);
+    const inst = instanceFromRolls(skin.value, fair.rolls);
+    if (u.balance < inst.value) return fail('Nepakanka balanso');
     const now = Date.now();
-    u.balance -= skin.value;
+    u.balance -= inst.value;
     casino.scheduleLeaders();
     casino.changed();
-    const payload = { skinId: skin.id, value: skin.value };
+    const payload = { skinId: skin.id, value: inst.value, wear: inst.wear, skaitiklis: !!inst.skaitiklis, nonce: fair.nonce, serverHash: fair.serverHash };
     const done = db
       .transaction(async (tx) => {
-        const upd = await tx.run('UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?', [skin.value, u.id, skin.value]);
+        const upd = await tx.run('UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?', [inst.value, u.id, inst.value]);
         if (upd.changes !== 1) throw new Error('BALANCE');
-        const ins = await tx.run('INSERT INTO inventory (user_id, skin_id, created_at) VALUES (?, ?, ?)', [u.id, skin.id, now]);
+        const ins = await tx.run('INSERT INTO inventory (user_id, skin_id, created_at, wear, float_bp, skaitiklis, value_cents) VALUES (?, ?, ?, ?, ?, ?, ?)', [u.id, skin.id, now, inst.wear, inst.floatBp, inst.skaitiklis ? 1 : 0, inst.value]);
         await tx.run('INSERT INTO skin_events (user_id, nick, kind, payload, created_at) VALUES (?, ?, ?, ?, ?)', [u.id, u.name, 'buy', JSON.stringify(payload), now]);
-        return { id: ins.lastId, skinId: skin.id, createdAt: now };
+        return memItem(ins.lastId, skin.id, now, inst);
       })
       .then((item) => {
-        u.items.set(item.id, { skinId: item.skinId, createdAt: item.createdAt });
+        u.items.set(item.id, item);
         casino.changed();
-        return { ok: true, item, skinId: skin.id, balance: u.balance, items: dump(u) };
+        return { ok: true, item, price: inst.value, skinId: skin.id, balance: u.balance, items: dump(u) };
       })
       .catch(() => {
-        u.balance += skin.value;
+        u.balance += inst.value;
         casino.changed();
         return { ok: false, error: 'Pirkimas nutrauktas – balansas grąžintas' };
       });
@@ -403,8 +476,9 @@ function createApi(casino) {
       if (!it) return fail('Tokio daikto neturi');
       const skin = byId(it.skinId);
       if (!skin) return fail('Nežinomas daiktas');
-      payout += sellPayout(skin.value);
-      removed.push([id, it, skin]);
+      const worth = Number(it.value) || skin.value;
+      payout += sellPayout(worth);
+      removed.push([id, it, skin, worth]);
     }
     if (u.balance > BALANCE_CAP - payout) return fail('Balansas viršytų leistiną ribą');
     for (const [id] of removed) u.items.delete(id);
@@ -431,7 +505,7 @@ function createApi(casino) {
     return { done };
   }
 
-  function upgrade(u, body) {
+  async function upgrade(u, body) {
     body = body || {};
     const ids = parseIdList(body.items || [], MAX_BATCH);
     if (!ids) return fail('Neteisingi daiktai');
@@ -452,24 +526,27 @@ function createApi(casino) {
       if (!it) return fail('Tokio daikto neturi');
       const skin = byId(it.skinId);
       if (!skin) return fail('Nežinomas daiktas');
-      skinVal += skin.value;
+      skinVal += Number(it.value) || skin.value;
       removed.push([id, it]);
     }
     const input = skinVal + cash;
-    const bp = chanceBp(input, target.value);
+    const fair = await takeRolls(u, 'upgrade', [WEARS.length, ST_CHANCE_DEN, 1000000, ROLL_DEN]);
+    const inst = instanceFromRolls(target.value, fair.rolls);
+    const targetValue = inst.value;
+    const bp = chanceBp(input, targetValue);
     if (bp == null) {
-      const need = minInputFor(target.value);
+      const need = minInputFor(targetValue);
       return fail('Per maža tikimybė (mažiau nei 1 %). Šiam tikslui reikia bent ' + fmt(need) + '.');
     }
-    const capped = rawChanceBp(input, target.value) > MAX_BP;
+    const capped = rawChanceBp(input, targetValue) > MAX_BP;
     if (cash) u.balance -= cash;
     for (const [id] of removed) u.items.delete(id);
-    const roll = rng.int(ROLL_DEN);
+    const roll = fair.rolls[3];
     const won = upgradeWins(roll, bp, side);
     const now = Date.now();
     casino.scheduleLeaders();
     casino.changed();
-    const payload = { won, chanceBp: bp, side, targetId: target.id, input, targetValue: target.value, roll, capped };
+    const payload = { won, chanceBp: bp, side, targetId: target.id, input, targetValue, roll, capped, wear: inst.wear, skaitiklis: !!inst.skaitiklis, nonce: fair.nonce, serverHash: fair.serverHash };
     const ph = ids.length ? ids.map(() => '?').join(',') : '';
     const done = db
       .transaction(async (tx) => {
@@ -483,14 +560,14 @@ function createApi(casino) {
         }
         let item = null;
         if (won) {
-          const ins = await tx.run('INSERT INTO inventory (user_id, skin_id, created_at) VALUES (?, ?, ?)', [u.id, target.id, now]);
-          item = { id: ins.lastId, skinId: target.id, createdAt: now };
+          const ins = await tx.run('INSERT INTO inventory (user_id, skin_id, created_at, wear, float_bp, skaitiklis, value_cents) VALUES (?, ?, ?, ?, ?, ?, ?)', [u.id, target.id, now, inst.wear, inst.floatBp, inst.skaitiklis ? 1 : 0, inst.value]);
+          item = memItem(ins.lastId, target.id, now, inst);
         }
         const ev = await tx.run('INSERT INTO skin_events (user_id, nick, kind, payload, created_at) VALUES (?, ?, ?, ?, ?)', [u.id, u.name, 'upgrade', JSON.stringify(payload), now]);
         return { item, eventId: ev.lastId };
       })
       .then(({ item, eventId }) => {
-        if (item) u.items.set(item.id, { skinId: item.skinId, createdAt: item.createdAt });
+        if (item) u.items.set(item.id, item);
         pushFeed({ id: eventId, nick: u.name, kind: 'upgrade', payload, createdAt: now });
         if (casino.noteWager) casino.noteWager(u.name, won ? input : 0, 'upgrade');
         return {
@@ -501,6 +578,7 @@ function createApi(casino) {
           side,
           capped,
           targetId: target.id,
+          targetValue,
           input,
           item,
           removedIds: ids,
@@ -517,22 +595,25 @@ function createApi(casino) {
     return { done };
   }
 
-  function grantCase(u, caseId) {
+  async function grantCase(u, caseId) {
     const kase = CASE_BY_ID.get(caseId);
     if (!kase) return fail('Nežinoma dėžė');
     if (!u.items) return fail('Inventorius dar kraunasi');
     if (u.items.size >= MAX_ITEMS) return fail('Inventorius pilnas (' + MAX_ITEMS + ')');
-    const skin = rollDrop(kase);
+    const weight = kase.drops.reduce((s, d) => s + d.w, 0);
+    const fair = await takeRolls(u, 'case', [weight, WEARS.length, ST_CHANCE_DEN, 1000000]);
+    const skin = byId(rngPick(kase.drops, fair.rolls[0]));
+    const inst = instanceFromRolls(skin.value, fair.rolls.slice(1));
     const now = Date.now();
-    const payload = { caseId: kase.id, skinId: skin.id, value: skin.value, free: true };
+    const payload = { caseId: kase.id, skinId: skin.id, value: inst.value, wear: inst.wear, skaitiklis: !!inst.skaitiklis, free: true, nonce: fair.nonce, serverHash: fair.serverHash };
     const done = db
       .transaction(async (tx) => {
-        const ins = await tx.run('INSERT INTO inventory (user_id, skin_id, created_at) VALUES (?, ?, ?)', [u.id, skin.id, now]);
+        const ins = await tx.run('INSERT INTO inventory (user_id, skin_id, created_at, wear, float_bp, skaitiklis, value_cents) VALUES (?, ?, ?, ?, ?, ?, ?)', [u.id, skin.id, now, inst.wear, inst.floatBp, inst.skaitiklis ? 1 : 0, inst.value]);
         const ev = await tx.run('INSERT INTO skin_events (user_id, nick, kind, payload, created_at) VALUES (?, ?, ?, ?, ?)', [u.id, u.name, 'case', JSON.stringify(payload), now]);
-        return { item: { id: ins.lastId, skinId: skin.id, createdAt: now }, eventId: ev.lastId };
+        return { item: memItem(ins.lastId, skin.id, now, inst), eventId: ev.lastId };
       })
       .then(({ item, eventId }) => {
-        u.items.set(item.id, { skinId: item.skinId, createdAt: item.createdAt });
+        u.items.set(item.id, item);
         pushFeed({ id: eventId, nick: u.name, kind: 'case', payload, createdAt: now });
         if (casino.noteWager) casino.noteWager(u.name, 1, 'case');
         casino.changed();
@@ -542,7 +623,34 @@ function createApi(casino) {
     return { done };
   }
 
-  return { ensureItems, openCase, buy, sell, upgrade, history, dump, grantCase };
+  async function giveUnopened(u, caseId) {
+    if (!CASE_BY_ID.get(caseId)) return { error: 'Nežinoma dėžė' };
+    const now = Date.now();
+    const ins = await db.transaction(async (tx) => tx.run('INSERT INTO unopened_cases (user_id, case_id, created_at) VALUES (?, ?, ?)', [u.id, caseId, now]));
+    return { ok: true, id: ins.lastId, caseId };
+  }
+
+  async function listUnopened(u) {
+    const rows = await db.all('SELECT id, case_id AS caseId, created_at AS createdAt FROM unopened_cases WHERE user_id = ? ORDER BY id', [u.id]);
+    return rows.map((r) => ({ id: Number(r.id), caseId: r.caseId, createdAt: Number(r.createdAt) }));
+  }
+
+  async function openUnopened(u, id) {
+    const row = await db.get('SELECT id, case_id FROM unopened_cases WHERE id = ? AND user_id = ?', [id, u.id]);
+    if (!row) return fail('Tokios dėžės neturi');
+    const del = await db.tx([['DELETE FROM unopened_cases WHERE id = ? AND user_id = ?', [id, u.id]]]);
+    if (!del || del[0] !== 1) return fail('Tokios dėžės neturi');
+    const opened = await grantCase(u, row.case_id);
+    if (opened.error) {
+      await db.tx([['INSERT INTO unopened_cases (user_id, case_id, created_at) VALUES (?, ?, ?)', [u.id, row.case_id, Date.now()]]]);
+      return opened;
+    }
+    const done = await opened.done;
+    if (!done.ok) await db.tx([['INSERT INTO unopened_cases (user_id, case_id, created_at) VALUES (?, ?, ?)', [u.id, row.case_id, Date.now()]]]);
+    return { done: Promise.resolve(done) };
+  }
+
+  return { ensureItems, openCase, buy, sell, upgrade, history, dump, grantCase, giveUnopened, listUnopened, openUnopened };
 }
 
 module.exports = {
@@ -564,6 +672,8 @@ module.exports = {
   minInputFor,
   upgradeWins,
   sellPayout,
+  priceOf,
+  dropExpected,
   migrateByValue,
   migrateInventory,
   caseMath,

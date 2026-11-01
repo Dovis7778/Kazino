@@ -109,6 +109,13 @@ async function main() {
   ok(progress.achievements({ games: 10, biggestWin: 0, wagered: 0, items: 0, balance: 0 }).filter((a) => a.ok).length >= 3, 'pasiekimai');
   ok(progress.DAILY_BONUS === 100000, 'dienos dovana 1 000 €');
   ok(skins.migrateByValue(40000) === 'ak-gintaras', 'migracija pagal vertę');
+  ok(skins.priceOf(200, 'fn', false) === 200, 'Factory New kaina lygi bazei');
+  ok(skins.priceOf(200, 'bs', false) < skins.priceOf(200, 'fn', false), 'Battle-Scarred pigesnė');
+  ok(skins.priceOf(200, 'fn', true) === 300, 'Skaitiklis ×1,5');
+  const fairMod = require('../src/fair');
+  ok(fairMod.crashFromSeed('abc') === fairMod.crashFromSeed('abc') && fairMod.crashFromSeed('abc') >= 100, 'crash sėkla');
+  ok(fairMod.fairInt('srv', 'cli', 3, 10000, 0) === fairMod.fairInt('srv', 'cli', 3, 10000, 0), 'HMAC metimas stabilus');
+  ok(fairMod.multAt(0) === 100 && fairMod.multAt(2500) > fairMod.multAt(200), 'crash kreivė kyla');
   ok(arcade.coinflipPayout(1000) === 1930, 'moneta 96,5 %');
   ok(Math.abs(arcade.plinkoRtp(8, 'low') - 0.965) < 0.03, 'plinko RTP');
   ok(arcade.minesMult(3, 1) > 1, 'mines daugiklis');
@@ -128,7 +135,7 @@ async function main() {
   ok(skins.upgradeWins(9900, 100, 'over') && !skins.upgradeWins(9899, 100, 'over'), 'virš: [10000−tikimybė, 10000)');
   for (const c of skins.CASES) {
     const weight = c.drops.reduce((s, d) => s + d.w, 0);
-    const ev = c.drops.reduce((s, d) => s + d.w * skins.byId(d.id).value, 0) / weight;
+    const ev = c.drops.reduce((s, d) => s + d.w * skins.dropExpected(skins.byId(d.id).value), 0) / weight;
     ok(Math.abs(c.drops.reduce((s, d) => s + d.p, 0) - 1) < 1e-9, c.id + ' tikimybių suma');
     ok(c.price === Math.max(1, Math.round(ev / 0.9)), c.id + ' kaina iš 90 % RTP');
     ok(c.rtp > 0.88 && c.rtp < 0.92, c.id + ' RTP ' + c.rtp.toFixed(4));
@@ -153,7 +160,7 @@ async function main() {
   }
   if (PG) {
     const d = await openDb();
-    for (const sql of ['DROP TABLE IF EXISTS tournament_paid', 'DROP TABLE IF EXISTS tournament_scores', 'DROP TABLE IF EXISTS mission_progress', 'DROP TABLE IF EXISTS holds', 'DROP TABLE IF EXISTS skin_events', 'DROP TABLE IF EXISTS inventory', 'DROP TABLE IF EXISTS open_bets', 'DROP TABLE IF EXISTS sessions', 'DROP TABLE IF EXISTS users']) {
+    for (const sql of ['DROP TABLE IF EXISTS unopened_cases', 'DROP TABLE IF EXISTS fair_rolls', 'DROP TABLE IF EXISTS fair_revealed', 'DROP TABLE IF EXISTS fair_users', 'DROP TABLE IF EXISTS tournament_paid', 'DROP TABLE IF EXISTS tournament_scores', 'DROP TABLE IF EXISTS mission_progress', 'DROP TABLE IF EXISTS holds', 'DROP TABLE IF EXISTS skin_events', 'DROP TABLE IF EXISTS inventory', 'DROP TABLE IF EXISTS open_bets', 'DROP TABLE IF EXISTS sessions', 'DROP TABLE IF EXISTS users']) {
       await d.tx([[sql]]);
     }
     await d.close();
@@ -450,9 +457,9 @@ async function main() {
     ok(true, 'bendroje juostoje matyti dėžės iškritimas');
 
     const bought = await oda.emit('shop:buy', 'sr-smelis');
-    ok(bought.ok && bought.balance === opened.balance - 350 && bought.item.skinId === 'sr-smelis', 'parduotuvė nurašo katalogo kainą');
+    ok(bought.ok && bought.price === bought.item.value && bought.balance === opened.balance - bought.price && bought.item.skinId === 'sr-smelis', 'parduotuvė nurašo būklės kainą');
     const sold = await oda.emit('skin:sell', bought.item.id);
-    ok(sold.ok && sold.payout === skins.sellPayout(350) && sold.balance === bought.balance + skins.sellPayout(350), 'pardavimas grąžina 90 %');
+    ok(sold.ok && sold.payout === skins.sellPayout(bought.price) && sold.balance === bought.balance + skins.sellPayout(bought.price), 'pardavimas grąžina 90 % būklės kainos');
     ok(!(await oda.emit('skin:sell', bought.item.id)).ok, 'antras pardavimas to paties daikto atmetamas');
     ok(sold.items.length === 1 && sold.items[0].skinId === opened.skinId, 'pardavus lieka tik dėžės skinas');
 
@@ -465,7 +472,7 @@ async function main() {
     const dupOk = [a, b].filter((x) => x.ok);
     ok(dupOk.length === 1 && [a, b].some((x) => !x.ok), 'tas pats daiktas sunaudojamas tik vieną kartą');
     const winTry = dupOk[0];
-    ok(winTry.chanceBp === skins.chanceBp(200, 800) && winTry.won === skins.upgradeWins(winTry.roll, winTry.chanceBp, winTry.side), 'dvigubas bandymas: tikimybė ir metimas sutampa');
+    ok(winTry.chanceBp === skins.chanceBp(winTry.input, winTry.targetValue) && winTry.won === skins.upgradeWins(winTry.roll, winTry.chanceBp, winTry.side), 'dvigubas bandymas: tikimybė ir metimas sutampa');
     ok(!winTry.items.some((i) => i.id === dupId), 'panaudoto daikto nebėra');
 
     const cash = Math.ceil((5000 * V) / skins.KEEP_BP);
@@ -479,7 +486,7 @@ async function main() {
       const side = i % 2 === 0 ? 'under' : 'over';
       const r = await oda.emit('upgrade:roll', { items: [], cash, target: 'ak-gintaras', side });
       ok(r.ok, 'upgraderio metimas ' + i);
-      ok(r.chanceBp === expectBp && r.side === side, 'serverio tikimybė = formulė');
+      ok(r.chanceBp === skins.chanceBp(cash, r.targetValue) && r.side === side, 'serverio tikimybė = formulė');
       ok(r.won === skins.upgradeWins(r.roll, r.chanceBp, side), 'laimėjimas atitinka metimą ir pusę');
       ok(r.balance === bal - cash, 'balansas sumažėja įnašu');
       if (r.won) {
@@ -495,12 +502,13 @@ async function main() {
     ok(sawWin && sawLose, 'matyti ir laimėjimas, ir pralaimėjimas');
 
     const capped = await oda.emit('upgrade:roll', { items: [], cash: V, target: 'ak-gintaras', side: 'under' });
-    ok(capped.ok && capped.capped && capped.chanceBp === skins.MAX_BP && capped.balance === bal - V, 'virš 80 % tikimybė nukerpama');
+    ok(capped.ok && capped.chanceBp === skins.chanceBp(V, capped.targetValue) && capped.balance === bal - V, 'upgraderio kaina pagal būklę');
+    ok(capped.capped === skins.rawChanceBp(V, capped.targetValue) > skins.MAX_BP, '80 % lubos pagal būklės kainą');
     bal = capped.balance;
     items = capped.items;
 
     const keep = await oda.emit('shop:buy', 'ps-juosta');
-    ok(keep.ok && keep.balance === bal - 500, 'prieš perkrovimą nupirktas skinas');
+    ok(keep.ok && keep.balance === bal - keep.price, 'prieš perkrovimą nupirktas skinas');
     bal = keep.balance;
     const got = await oda.emit('skins:get', {});
     ok(got.ok && got.history.some((h) => h.kind === 'case') && got.history.some((h) => h.kind === 'upgrade') && got.history.some((h) => h.kind === 'sell'), 'asmeninė istorija');
@@ -590,7 +598,7 @@ async function main() {
   const keepItem = again.items.find((i) => i.skinId === 'ps-juosta');
   ok(!!keepItem, 'nupirktas skinas išliko');
   const sold2 = await oda2.emit('skin:sell', keepItem.id);
-  ok(sold2.ok && sold2.payout === skins.sellPayout(500) && sold2.balance === odaSnap.balance + skins.sellPayout(500), 'po perkrovimo pardavimas 90 %');
+  ok(sold2.ok && sold2.payout === skins.sellPayout(keepItem.value) && sold2.balance === odaSnap.balance + skins.sellPayout(keepItem.value), 'po perkrovimo pardavimas 90 %');
   ok(!sold2.items.some((i) => i.id === keepItem.id), 'parduotas daiktas dingsta');
 
   // ---------- nauji žaidimai, kovos, misijos, VIP ----------

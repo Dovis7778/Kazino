@@ -4,6 +4,7 @@
 const progress = require('./progress');
 const skins = require('./skins');
 const rng = require('./rng');
+const fair = require('./fair');
 
 const EDGE = 0.035;
 const RTP = 1 - EDGE;
@@ -192,6 +193,12 @@ function createArcade(casino, db) {
       round: crash.round,
       mult: crash.mult,
       crashAt: crash.phase === 'crashed' ? crash.crashAt : null,
+      started: crash.started || 0,
+      betEnds: crash.betEnds || 0,
+      serverNow: Date.now(),
+      growth: fair.GROWTH,
+      hash: crash.hash || null,
+      seed: crash.phase === 'crashed' ? crash.serverSeed : null,
       history: crash.history.slice(0, 12),
       bets: [...crash.bets.values()].map((b) => ({ name: b.name, amount: b.amount, auto: b.auto, cashed: b.cashed, at: b.at || 0 })),
     };
@@ -213,7 +220,9 @@ function createArcade(casino, db) {
       cases: b.cases,
       rounds: b.rounds,
       status: b.status,
+      price: b.price || 0,
       seats: b.seats.map((s) => ({ name: s.name, bot: !!s.bot, total: s.total, skins: s.skins })),
+      opens: b.opens || [],
       winner: b.winner || null,
     };
   }
@@ -255,11 +264,19 @@ function createArcade(casino, db) {
         crash.bets = new Map();
         crash.mult = 100;
         crash.phase = 'betting';
-        crash.crashAt = crashPoint();
+        armCrashRound();
         casino.changed();
         crash.timer = setTimeout(runCrash, betMs);
       }, Math.max(400, Math.round(1500 * scale)));
     });
+  }
+
+  function armCrashRound() {
+    crash.serverSeed = fair.newSeed();
+    crash.hash = fair.sha256(crash.serverSeed);
+    crash.crashAt = fair.crashFromSeed(crash.serverSeed);
+    crash.betEnds = Date.now() + betMs;
+    crash.started = 0;
   }
 
   function runCrash() {
@@ -270,11 +287,12 @@ function createArcade(casino, db) {
     casino.changed();
     const step = () => {
       if (stopped || crash.phase !== 'running') return;
-      crash.mult = Math.max(crash.mult + 1, Math.floor(crash.mult * 1.055));
+      crash.mult = fair.multAt(Date.now() - crash.started);
       for (const bet of crash.bets.values()) {
-        if (!bet.cashed && bet.auto && crash.mult >= bet.auto && crash.mult < crash.crashAt) cashCrash(bet, bet.auto);
+        if (!bet.cashed && bet.auto && crash.mult >= bet.auto && bet.auto < crash.crashAt) cashCrash(bet, bet.auto);
       }
       if (crash.mult >= crash.crashAt) {
+        crash.mult = crash.crashAt;
         endCrashRound();
         return;
       }
@@ -320,7 +338,7 @@ function createArcade(casino, db) {
     refundHolds()
       .catch(() => {})
       .finally(() => {
-        crash.crashAt = crashPoint();
+        armCrashRound();
         crash.phase = 'betting';
         casino.changed();
         crash.timer = setTimeout(runCrash, betMs);
@@ -395,8 +413,12 @@ function createArcade(casino, db) {
       if (!Number.isSafeInteger(bet) || bet < 100) return fail(cb, 'Mažiausias statymas 1,00 €');
       if (u.mines) return fail(cb, 'Jau žaidi Mines');
       if (u.balance < bet) return fail(cb, 'Nepakanka balanso');
+      const drawn = casino.fair
+        ? await casino.fair.drawMany(u, 'mines', Array.from({ length: mines }, (_, i) => 25 - i))
+        : { rolls: Array.from({ length: mines }, (_, i) => rng.int(25 - i)) };
+      const bag = Array.from({ length: 25 }, (_, i) => i);
       const spots = new Set();
-      while (spots.size < mines) spots.add(rng.int(25));
+      for (let i = 0; i < mines; i++) spots.add(bag.splice(drawn.rolls[i] % bag.length, 1)[0]);
       u.balance -= bet;
       await db.tx([['UPDATE users SET balance = balance - ?, total_wagered = total_wagered + ? WHERE id = ?', [bet, bet, u.id]]]);
       u.stats.wagered += bet;
@@ -453,10 +475,13 @@ function createArcade(casino, db) {
       if (!Number.isSafeInteger(bet) || bet < 100) return fail(cb, 'Mažiausias statymas 1,00 €');
       if (u.balance < bet) return fail(cb, 'Nepakanka balanso');
       const mults = plinkoMults(rows, risk);
+      const drawn = casino.fair
+        ? await casino.fair.drawMany(u, 'plinko', Array.from({ length: rows }, () => 2))
+        : { rolls: Array.from({ length: rows }, () => rng.int(2)) };
       let rights = 0;
       const path = [];
       for (let i = 0; i < rows; i++) {
-        const right = rng.int(2) === 1;
+        const right = drawn.rolls[i] % 2 === 1;
         if (right) rights++;
         path.push(right ? 'R' : 'L');
       }
@@ -479,27 +504,59 @@ function createArcade(casino, db) {
     });
 
     function flipView(f) {
-      return { id: f.id, name: f.name, amount: f.amount, skinId: f.skinId || null, status: f.status, opponent: f.opponent || null, winner: f.winner || null, bot: !!f.bot };
+      return { id: f.id, name: f.name, amount: f.amount, items: (f.items || []).map((i) => ({ skinId: i.skinId, value: i.value })), status: f.status, opponent: f.opponent || null, winner: f.winner || null, bot: !!f.bot, payout: f.payout || null };
+    }
+
+    function packItems(u, ids) {
+      const items = [];
+      let sum = 0;
+      for (const id of ids) {
+        const it = u.items && u.items.get(id);
+        if (!it) return null;
+        const skin = skins.byId(it.skinId);
+        const value = Number(it.value) || (skin ? skin.value : 0);
+        sum += value;
+        items.push({ id, skinId: it.skinId, value, wear: it.wear || 'fn', skaitiklis: it.skaitiklis ? 1 : 0, floatBp: it.floatBp || 3000 });
+      }
+      return { sum, items };
+    }
+
+    async function escrowItems(u, items) {
+      if (!items.length) return;
+      for (const it of items) u.items.delete(it.id);
+      const ph = items.map(() => '?').join(',');
+      await db.tx([['DELETE FROM inventory WHERE user_id = ? AND id IN (' + ph + ')', [u.id, ...items.map((i) => i.id)]]]);
     }
 
     async function finishFlip(f, winnerName) {
+      const skinsPot = (f.items || []).concat(f.joinItems || []);
+      const cashPot = (f.cash || 0) + (f.joinCash || 0);
+      const pot = cashPot + skinsPot.reduce((s, i) => s + i.value, 0);
+      const winValue = Math.floor((pot * 965) / 1000);
+      const given = [];
+      let skinSum = 0;
+      for (const it of skinsPot.slice().sort((a, b) => b.value - a.value)) {
+        if (skinSum + it.value <= winValue) {
+          given.push(it);
+          skinSum += it.value;
+        }
+      }
       f.status = 'done';
       f.winner = winnerName;
-      const pot = coinflipPayout(f.amount);
-      const w = user(winnerName);
+      f.payout = winValue;
+      const w = winnerName === 'Botas' ? null : user(winnerName);
       if (w) {
-        const c = casino.capped(w, pot);
-        w.balance += c;
-        await db.tx([['UPDATE users SET balance = balance + ? WHERE id = ?', [c, w.id]]]);
-        if (f.skinId && winnerName === f.name) {
-          /* savas skinas lieka, priešininkas neturėjo skino */
+        const cash = winValue - skinSum;
+        if (cash > 0) {
+          const c = casino.capped(w, cash);
+          w.balance += c;
+          await db.tx([['UPDATE users SET balance = balance + ? WHERE id = ?', [c, w.id]]]);
         }
-        if (f.oppSkin && w.items) w.items.set(f.oppSkin.itemId, f.oppSkin.meta);
-      }
-      if (f.skinId && winnerName !== f.name) {
-        const owner = user(f.name);
-        if (owner && owner.items) owner.items.delete(f.skinItem);
-        await db.tx([['UPDATE inventory SET user_id = ? WHERE id = ?', [w ? w.id : f.userId, f.skinItem]]]);
+        for (const it of given) {
+          const now = Date.now();
+          const ins = await db.transaction(async (tx) => tx.run('INSERT INTO inventory (user_id, skin_id, created_at, wear, float_bp, skaitiklis, value_cents) VALUES (?, ?, ?, ?, ?, ?, ?)', [w.id, it.skinId, now, it.wear, it.floatBp, it.skaitiklis ? 1 : 0, it.value]));
+          if (w.items) w.items.set(ins.lastId, { skinId: it.skinId, createdAt: now, value: it.value, wear: it.wear, floatBp: it.floatBp, skaitiklis: it.skaitiklis ? 1 : 0 });
+        }
       }
       casino.scheduleLeaders();
       casino.changed();
@@ -509,14 +566,23 @@ function createArcade(casino, db) {
       const u = need(cb);
       if (!u) return;
       d = d || {};
-      const amount = d.amount;
-      if (!Number.isSafeInteger(amount) || amount < 100) return fail(cb, 'Mažiausias statymas 1,00 €');
-      if (u.balance < amount) return fail(cb, 'Nepakanka balanso');
-      u.balance -= amount;
-      await db.tx([['UPDATE users SET balance = balance - ? WHERE id = ?', [amount, u.id]]]);
-      note(u.name, amount, 'wager');
+      await casino.skinsApi.ensureItems(u);
+      const ids = Array.isArray(d.items) ? [...new Set(d.items.map(Number))].filter((n) => Number.isInteger(n) && n > 0).slice(0, 8) : [];
+      const pack = ids.length ? packItems(u, ids) : { sum: 0, items: [] };
+      if (!pack) return fail(cb, 'Tokio skino neturi');
+      const cash = d.amount || 0;
+      if (cash && (!Number.isSafeInteger(cash) || cash < 0)) return fail(cb, 'Neteisinga suma');
+      const total = cash + pack.sum;
+      if (total < 100) return fail(cb, 'Mažiausias statymas 1,00 €');
+      if (u.balance < cash) return fail(cb, 'Nepakanka balanso');
+      if (cash) {
+        u.balance -= cash;
+        await db.tx([['UPDATE users SET balance = balance - ? WHERE id = ?', [cash, u.id]]]);
+      }
+      if (pack.items.length) await escrowItems(u, pack.items);
+      note(u.name, total, 'wager');
       const id = flipSeq++;
-      const f = { id, name: u.name, userId: u.id, amount, status: 'open', created: Date.now() };
+      const f = { id, name: u.name, userId: u.id, amount: total, cash, items: pack.items, total, status: 'open', created: Date.now() };
       flips.set(id, f);
       const wait = d.bot ? 0 : botMs;
       f.timer = setTimeout(async () => {
@@ -524,33 +590,46 @@ function createArcade(casino, db) {
         f.status = 'playing';
         f.opponent = 'Botas';
         f.bot = true;
-        const win = rng.int(2) === 0;
-        const winner = win ? f.name : 'Botas';
-        if (winner === f.name) await finishFlip(f, f.name);
-        else {
-          f.status = 'done';
-          f.winner = 'Botas';
-          casino.changed();
-        }
+        f.joinCash = f.total;
+        f.joinItems = [];
+        const drawn = casino.fair ? await casino.fair.drawMany(u, 'coinflip', [2]) : { rolls: [rng.int(2)] };
+        const winner = drawn.rolls[0] % 2 === 0 ? f.name : 'Botas';
+        await finishFlip(f, winner);
       }, wait);
       casino.changed();
       ok(cb, { flip: flipView(f), balance: u.balance });
     });
 
-    on('coinflip:join', async (id, cb) => {
+    on('coinflip:join', async (d, cb) => {
       const u = need(cb);
       if (!u) return;
+      const id = typeof d === 'number' ? d : d && d.id;
+      const body = d && typeof d === 'object' ? d : {};
       const f = flips.get(Number(id));
       if (!f || f.status !== 'open') return fail(cb, 'Dvikovos nėra');
       if (f.name === u.name) return fail(cb, 'Negali žaisti prieš save');
-      if (u.balance < f.amount) return fail(cb, 'Nepakanka balanso');
+      await casino.skinsApi.ensureItems(u);
+      const ids = Array.isArray(body.items) ? [...new Set(body.items.map(Number))].filter((n) => Number.isInteger(n) && n > 0).slice(0, 8) : [];
+      const pack = ids.length ? packItems(u, ids) : { sum: 0, items: [] };
+      if (!pack) return fail(cb, 'Tokio skino neturi');
+      const cash = body.amount == null && !ids.length ? f.total : body.amount || 0;
+      if (cash && (!Number.isSafeInteger(cash) || cash < 0)) return fail(cb, 'Neteisinga suma');
+      const joinTotal = cash + pack.sum;
+      if (Math.abs(joinTotal - f.total) * 100 > f.total * 5) return fail(cb, 'Vertė turi sutapti ±5 %');
+      if (u.balance < cash) return fail(cb, 'Nepakanka balanso');
       clearTimeout(f.timer);
-      u.balance -= f.amount;
-      await db.tx([['UPDATE users SET balance = balance - ? WHERE id = ?', [f.amount, u.id]]]);
-      note(u.name, f.amount, 'wager');
+      if (cash) {
+        u.balance -= cash;
+        await db.tx([['UPDATE users SET balance = balance - ? WHERE id = ?', [cash, u.id]]]);
+      }
+      if (pack.items.length) await escrowItems(u, pack.items);
+      note(u.name, joinTotal, 'wager');
       f.status = 'playing';
       f.opponent = u.name;
-      const winner = rng.int(2) === 0 ? f.name : u.name;
+      f.joinCash = cash;
+      f.joinItems = pack.items;
+      const drawn = casino.fair ? await casino.fair.drawMany(u, 'coinflip', [2]) : { rolls: [rng.int(2)] };
+      const winner = drawn.rolls[0] % 2 === 0 ? f.name : u.name;
       await finishFlip(f, winner);
       ok(cb, { flip: flipView(f), balance: u.balance });
     });
@@ -566,8 +645,8 @@ function createArcade(casino, db) {
       if (!u) return;
       d = d || {};
       const mode = ['1v1', '1v1v1', '2v2'].includes(d.mode) ? d.mode : '1v1';
-      const rounds = Number.isInteger(d.rounds) ? Math.min(5, Math.max(1, d.rounds)) : 1;
-      const cases = Array.isArray(d.cases) ? d.cases.filter((id) => skins.CASES.some((c) => c.id === id)).slice(0, 4) : [];
+      const rounds = Number.isInteger(d.rounds) ? Math.min(10, Math.max(1, d.rounds)) : 1;
+      const cases = Array.isArray(d.cases) ? d.cases.filter((id) => skins.CASES.some((c) => c.id === id)).slice(0, 6) : [];
       if (!cases.length) return fail(cb, 'Pasirink dėžę');
       const price = cases.reduce((s, id) => s + skins.CASES.find((c) => c.id === id).price, 0) * rounds;
       if (u.balance < price) return fail(cb, 'Nepakanka balanso dėžėms');
@@ -612,16 +691,23 @@ function createArcade(casino, db) {
       if (b.seats[0].name !== u.name) return fail(cb, 'Tik kūrėjas pradeda');
       while (b.seats.length < b.max) b.seats.push({ name: 'Botas ' + (b.seats.length + 1), bot: true, total: 0, skins: [] });
       b.status = 'done';
+      b.opens = [];
       for (let r = 0; r < b.rounds; r++) {
         for (const cid of b.cases) {
           const kase = skins.CASES.find((c) => c.id === cid);
+          const results = [];
           for (const seat of b.seats) {
-            const dropId = require('./rng').weighted(kase.drops.map((d) => [d.id, d.w]));
+            const dropId = rng.weighted(kase.drops.map((d) => [d.id, d.w]));
             const skin = skins.byId(dropId);
-            seat.total += skin.value;
+            const w = skins.WEARS[rng.int(skins.WEARS.length)];
+            const st = rng.int(10) === 0;
+            const value = skins.priceOf(skin.value, w.id, st);
+            seat.total += value;
             seat.skins.push(skin.id);
+            results.push({ name: seat.name, skinId: skin.id, value, wear: w.id, skaitiklis: st });
             if (!seat.bot && user(seat.name)) note(seat.name, 1, 'case');
           }
+          b.opens.push({ round: r + 1, caseId: cid, results });
         }
       }
       let best = b.seats[0];
@@ -638,10 +724,10 @@ function createArcade(casino, db) {
       if (!winner.bot) {
         const w = user(winner.name);
         if (w) {
-          for (const sid of b.seats.flatMap((s) => s.skins)) {
+          for (const drop of b.opens.flatMap((o) => o.results)) {
             const now = Date.now();
-            const ins = await db.transaction(async (tx) => tx.run('INSERT INTO inventory (user_id, skin_id, created_at) VALUES (?, ?, ?)', [w.id, sid, now]));
-            if (w.items) w.items.set(ins.lastId, { skinId: sid, createdAt: now });
+            const ins = await db.transaction(async (tx) => tx.run('INSERT INTO inventory (user_id, skin_id, created_at, wear, float_bp, skaitiklis, value_cents) VALUES (?, ?, ?, ?, ?, ?, ?)', [w.id, drop.skinId, now, drop.wear, 3000, drop.skaitiklis ? 1 : 0, drop.value]));
+            if (w.items) w.items.set(ins.lastId, { skinId: drop.skinId, createdAt: now, value: drop.value, wear: drop.wear, floatBp: 3000, skaitiklis: drop.skaitiklis ? 1 : 0 });
           }
         }
       }
@@ -656,7 +742,7 @@ function createArcade(casino, db) {
       const list = progress.MISSIONS.map((m) => {
         const key = progress.periodKey(m.period);
         const row = rows.find((r) => r.mission_id === m.id && r.period_key === key);
-        return { id: m.id, title: m.title, goal: m.goal, reward: m.reward, progress: row ? Number(row.progress) : 0, claimed: row ? !!Number(row.claimed) : false, period: m.period };
+        return { id: m.id, title: m.title, goal: m.goal, reward: m.reward, caseId: m.caseId || null, progress: row ? Number(row.progress) : 0, claimed: row ? !!Number(row.claimed) : false, period: m.period };
       });
       ok(cb, { missions: list, day: progress.vilniusDay() });
     });
@@ -670,6 +756,14 @@ function createArcade(casino, db) {
       const row = await db.get('SELECT progress, claimed FROM mission_progress WHERE user_id = ? AND mission_id = ? AND period_key = ?', [u.id, m.id, key]);
       if (!row || Number(row.progress) < m.goal) return fail(cb, 'Misija dar nebaigta');
       if (Number(row.claimed)) return fail(cb, 'Jau atsiėmei');
+      if (m.caseId) {
+        const changes = await db.tx([['UPDATE mission_progress SET claimed = 1 WHERE user_id = ? AND mission_id = ? AND period_key = ? AND claimed = 0', [u.id, m.id, key]]]);
+        if (!changes || changes[0] !== 1) return fail(cb, 'Jau atsiėmei');
+        const given = await casino.skinsApi.giveUnopened(u, m.caseId);
+        if (!given.ok) return fail(cb, given.error || 'Dėžės nepavyko įdėti');
+        casino.changed();
+        return ok(cb, { reward: 0, caseId: m.caseId, balance: u.balance });
+      }
       const changes = await db.tx([
         ['UPDATE mission_progress SET claimed = 1 WHERE user_id = ? AND mission_id = ? AND period_key = ? AND claimed = 0', [u.id, m.id, key]],
         ['UPDATE users SET balance = balance + ? WHERE id = ?', [m.reward, u.id]],

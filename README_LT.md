@@ -64,7 +64,9 @@ Inventorius saugomas lentelėje `inventory`, įvykiai – `skin_events`. Senesn�
 
 Visi nauji žaidimai skaičiuojami serveryje (`crypto` atsitiktinumas, centai). Pinigai lieka žaidimo pinigai.
 
-- **Crash** – bendras raundas. Jei vienetinis metimas `< 3,5 %`, daugiklis iškart 1,00×. Kitu atveju `floor(0,965 / (1 − x) × 100)` šimtųjų dalių, ribos 1,00×–1000×. Taip teorinė grąža yra apie **96,5 %**. Statymas rezervuojamas; neišėjus jis nurašomas, išėjus išmokama `statymas × daugiklis`.
+- **Crash** – bendras raundas. Taškas skaičiuojamas iš serverio sėklos (HMAC), kurios SHA-256 maišas matomas prieš startą, o pati sėkla – po kritimo. Jei vienetinis metimas `< 3,5 %`, daugiklis 1,00×, kitaip `floor(0,965 / (1 − x) × 100)` šimtųjų, ribos 1,00×–1000×. Kreivė: `100 × e^(ln(1,055) / 90 × ms)`. Grąža apie **96,5 %**.
+- **Būklė ir Skaitiklis.** Bazinė kaina yra Factory New be Skaitiklio. Daugikliai: FN 1,00, MW 0,85, FT 0,70, WW 0,62, BS 0,55. Skaitiklis (10 % tikimybė) ×1,50. Dėžių kaina iš naujo paskaičiuota, kad tikėtina grąža liktų apie **90 %**. Parduotuvė, upgraderis ir kovos naudoja šią būklės kainą. Seni daiktai perkeliami kaip FN be Skaitiklio už buvusią vertę.
+- **Sąžiningumas.** Kiekvienas žaidėjas turi serverio sėklą (rodomas tik maišas), keičiamą kliento sėklą ir nonce. Metimas = `HMAC-SHA256(serverSeed, clientSeed:nonce:cursor)` pirmieji 4 baitai modulis n. Taip metami upgraderis, dėžės, Mines, Plinko ir moneta. Puslapis „Sąžiningumas“ profilyje leidžia atverti sėklą ir pasitikrinti seną metimą.
 - **Mines** – 25 langeliai. Daugiklis po k saugų langelių yra `floor(0,965 / p × 100) / 100`, kur p – tikimybė tiek kartų iš eilės nepataikyti į miną.
 - **Plinko** – kiekvienas kamuoliukas nepriklausomai krenta kairėn arba dešinėn. Daugikliai kraštuose didesni, o visa skalė padauginta taip, kad tikėtina grąža būtų apie **96,5 %** (dėl apvalinimo žemyn šiek tiek mažiau).
 - **Moneta** – laimėtojas gauna `floor(2 × statymas × 965 / 1000)`, tai yra **1,93×** (96,5 %).

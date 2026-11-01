@@ -73,6 +73,7 @@ const MISSIONS = [
   { id: 'd-plinko', period: 'day', kind: 'plinko', goal: 1, reward: 5000, title: 'Numesk 1 Plinko' },
   { id: 'w-wager', period: 'week', kind: 'weekwager', goal: 100000, reward: 50000, title: 'Pastatyk 1 000 € per savaitę' },
   { id: 'w-crash', period: 'week', kind: 'crash', goal: 3, reward: 40000, title: '3 sėkmingi Crash išėmimai' },
+  { id: 'w-case', period: 'week', kind: 'plinko', goal: 3, reward: 0, caseId: 'smelis', title: '3 Plinko – nemokama dėžė' },
 ];
 
 function vilniusDay(now) {
