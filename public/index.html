@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="lt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e090b" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%8E%B0%3C/text%3E%3C/svg%3E" />
+    <title>Kazino su draugais – žaidimo pinigai</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Prisijungimo / registracijos ekranas -->
+  <section id="join" class="join">
+    <div class="join-card">
+      <div class="logo">🎰 Kazino su draugais</div>
+      <p class="notice">Žaidimo pinigai, ne tikri. Čia nėra jokių mokėjimų – tik pramoga su draugais.</p>
+      <div id="authWait" class="small hidden">Jungiamasi…</div>
+      <div id="authForm">
+        <div class="seg"><button class="segb active" data-auth="login" type="button">Prisijungti</button><button class="segb" data-auth="register" type="button">Registruotis</button></div>
+        <label class="lbl" for="nickIn">Slapyvardis</label>
+        <input id="nickIn" maxlength="16" autocomplete="username" placeholder="pvz. Dovis" autocapitalize="off" spellcheck="false" />
+        <label class="lbl" for="passIn">Slaptažodis</label>
+        <input id="passIn" type="password" maxlength="100" autocomplete="current-password" placeholder="bent 6 simboliai" />
+        <div id="regExtra" class="hidden">
+          <label class="lbl" for="pass2In">Pakartok slaptažodį</label>
+          <input id="pass2In" type="password" maxlength="100" autocomplete="new-password" />
+          <div class="lbl">Avataras</div>
+          <div id="regAvatars" class="avatars"></div>
+        </div>
+        <button id="authBtn" class="btn primary wide" type="button">Prisijungti</button>
+        <button id="resumeBtn" class="btn wide hidden" type="button">Tęsti šiame lange</button>
+        <p id="authErr" class="err" role="alert"></p>
+        <p class="small">Slapyvardis: 3–16 raidžių, skaičių arba „_“. El. pašto ar kitų asmens duomenų nereikia. Nauja paskyra gauna 10 000,00 € žaidimo pinigų; balansas išsaugomas.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pagrindinis ekranas -->
+  <section id="app" class="app hidden">
+    <header class="topbar">
+      <div class="brand">🎰 <span>Kazino</span></div>
+      <button id="profBtn" class="code-chip" type="button" title="Profilis"><span id="meAvatar">🙂</span> <b id="meNick"></b></button>
+      <div class="bal"><span class="bal-l">Balansas</span><b id="myBal">0,00 €</b></div>
+      <button id="topBtn" class="btn small" type="button">Papildyti balansą</button>
+    </header>
+    <div class="notice-bar">Žaidimo pinigai, ne tikri · <span id="meName"></span> <span id="conn" class="conn on">● prisijungta</span></div>
+
+    <div id="profPanel" class="panel hidden">
+      <div class="panel-h">Mano profilis</div>
+      <div id="profStats" class="prof-stats"></div>
+      <div class="lbl">Pasirink avatarą</div>
+      <div id="profAvatars" class="avatars"></div>
+      <div id="adminBox" class="row wrap hidden">
+        <input id="adminNick" placeholder="Žaidėjo slapyvardis" />
+        <button id="adminReset" class="btn" type="button">Atstatyti balansą (admin)</button>
+      </div>
+      <div class="row wrap"><button id="logoutBtn" class="btn ghost" type="button">Atsijungti</button></div>
+    </div>
+
+    <div id="topPanel" class="panel hidden">
+      <div class="panel-h">Pridėti žaidimo pinigų (netikri)</div>
+      <div class="row wrap">
+        <button class="btn" data-top="10000" type="button">+100 €</button>
+        <button class="btn" data-top="100000" type="button">+1 000 €</button>
+        <button class="btn" data-top="1000000" type="button">+10 000 €</button>
+      </div>
+      <div class="row wrap">
+        <input id="topIn" inputmode="decimal" placeholder="Kita suma, iki 1 000 000 €" />
+        <button id="topCustom" class="btn" type="button">Pridėti</button>
+        <button id="resetBal" class="btn ghost" type="button">Atstatyti iki 10 000 €</button>
+      </div>
+      <p id="topMsg" class="small"></p>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="bj" type="button">🃏 Blackjack</button>
+      <button class="tab" data-tab="rl" type="button">🎯 Ruletė</button>
+      <button class="tab" data-tab="lt" type="button">🎡 Laimės ratas</button>
+      <button class="tab" data-tab="dc" type="button">🎲 Kauliukai</button>
+      <button class="tab" data-tab="sl" type="button">🍒 Automatas</button>
+    </nav>
+
+    <div class="layout">
+      <main class="games">
+        <!-- BLACKJACK -->
+        <div class="game" id="g-bj">
+          <div id="bjTables" class="bj-tables"></div>
+          <div class="felt bj-felt">
+            <div class="status"><span id="bjStatus">Statymai</span><span class="timer" id="bjTimer"></span></div>
+            <div class="dealer"><div class="who">Dalintojas <span id="bjDealerVal" class="val"></span></div><div id="bjDealer" class="cards"></div></div>
+            <div id="bjSeats" class="seats"></div>
+            <div id="bjMsg" class="msg"></div>
+          </div>
+          <div id="bjBetBox" class="controls">
+            <div class="chips" data-chips="bj"></div>
+            <div class="spots">
+              <button class="spot" data-bjspot="pp" type="button">Perfect Pairs<b data-bjamt="pp"></b></button>
+              <button class="spot main" data-bjspot="main" type="button">Pagrindinis<b data-bjamt="main"></b></button>
+              <button class="spot" data-bjspot="t3" type="button">21+3<b data-bjamt="t3"></b></button>
+            </div>
+            <div class="row wrap">
+              <button class="btn ghost" data-clear="bj" type="button">Išvalyti</button>
+              <button class="btn ghost" data-rebet="bj" type="button">Kartoti statymą</button>
+              <button class="btn primary" data-ready="bj" type="button">Pasiruošęs</button>
+            </div>
+          </div>
+          <div id="bjActBox" class="controls hidden">
+            <div class="row wrap center">
+              <button class="btn primary" data-act="hit" type="button">Imti</button>
+              <button class="btn" data-act="stand" type="button">Stovėti</button>
+              <button class="btn" data-act="double" type="button">Dvigubinti</button>
+              <button class="btn" data-act="split" type="button">Skaidyti</button>
+            </div>
+          </div>
+          <div class="hist"><span class="hl">Dalintojo rezultatai:</span> <span id="bjHist"></span></div>
+          <details class="rules"><summary>Blackjack taisyklės</summary>
+            <p>6 kaladžių batas, sumaišomas, kai lieka mažiau nei 78 kortos. Dalintojas ima iki 17 ir stovi ant minkštų 17. Blackjack moka 3:2, laimėjimas 1:1. Dvigubinti galima su pirmomis dviem kortomis, skaidyti – vieną kartą (dvi vienodos vertės kortos; skaidyti tūzai gauna po vieną kortą). Jei dalintojo atversta korta tūzas ar dešimtukas, jis pasitikrina, ar turi blackjack.</p>
+            <p>Statymų fazė trunka 20 s nuo pirmo statymo arba baigiasi anksčiau, kai visi statę paspaudžia „Pasiruošęs“. Savo eilėje turi 25 s, kitaip automatiškai stovima.</p>
+            <p>Perfect Pairs: mišri pora 5:1, spalvota 12:1, tobula 25:1 (grąžinimas apie 90,0 %). 21+3 (tavo dvi kortos + dalintojo atversta): ta pati masti 5:1, eilė 10:1, trys vienodi 30:1, vienos masties eilė 40:1, trys vienodi vienos masties 100:1 (apie 95,4 %).</p>
+          </details>
+        </div>
+
+        <!-- RULETĖ -->
+        <div class="game hidden" id="g-rl">
+          <div class="felt rl-felt">
+            <div class="status"><span id="rlStatus">Statymai</span><span class="timer" id="rlTimer"></span></div>
+            <div class="rl-top">
+              <div class="rl-wheel-wrap"><div class="pointer"></div><svg id="rlWheel" viewBox="-110 -110 220 220"></svg></div>
+              <div class="rl-result"><div id="rlNum" class="bignum">–</div><div id="rlMsg" class="msg"></div></div>
+            </div>
+            <div id="rlBoard" class="rl-board"></div>
+          </div>
+          <div class="controls">
+            <div class="chips" data-chips="rl"></div>
+            <div class="row wrap">
+              <button class="btn ghost" data-clear="rl" type="button">Išvalyti</button>
+              <button class="btn ghost" data-rebet="rl" type="button">Kartoti statymą</button>
+              <button class="btn primary" data-ready="rl" type="button">Pasiruošęs</button>
+            </div>
+            <div id="rlMine" class="small"></div>
+          </div>
+          <div class="hist"><span class="hl">Paskutiniai skaičiai:</span> <span id="rlHist"></span></div>
+          <details class="rules"><summary>Ruletės taisyklės</summary>
+            <p>Europietiška ruletė su vienu nuliu. Skaičius moka 35:1, tuzinas ir stulpelis 2:1, raudona/juoda, lyginis/nelyginis, 1–18/19–36 – 1:1. Nulis pralaimi visus išorinius statymus. Grąžinimas visiems statymams 36/37 = 97,3 %.</p>
+            <p>Statymų fazė trunka 20 s nuo pirmo statymo arba kol visi statę paspaudžia „Pasiruošęs“. Vienas sukimas bendras visiems prisijungusiems žaidėjams.</p>
+          </details>
+        </div>
+
+        <!-- LAIMĖS RATAS -->
+        <div class="game hidden" id="g-lt">
+          <div class="felt lt-felt">
+            <div class="status"><span id="ltStatus">Statymai</span><span class="timer" id="ltTimer"></span></div>
+            <div class="topslot"><span class="ts-l">Daugiklio langelis</span><span id="ltTop" class="ts-v">–</span></div>
+            <div class="lt-wheel-wrap"><div class="pointer big"></div><svg id="ltWheel" viewBox="0 0 320 320"></svg></div>
+            <div id="ltMsg" class="msg"></div>
+            <div id="ltBonus" class="bonus hidden"></div>
+            <div id="ltBoard" class="lt-board"></div>
+          </div>
+          <div class="controls">
+            <div class="chips" data-chips="lt"></div>
+            <div class="row wrap">
+              <button class="btn ghost" data-clear="lt" type="button">Išvalyti</button>
+              <button class="btn ghost" data-rebet="lt" type="button">Kartoti statymą</button>
+              <button class="btn primary" data-ready="lt" type="button">Pasiruošęs</button>
+            </div>
+          </div>
+          <div class="hist"><span class="hl">Istorija:</span> <span id="ltHist"></span></div>
+          <details class="rules"><summary>Laimės rato taisyklės ir grąžinimas</summary>
+            <div id="ltRules"></div>
+          </details>
+        </div>
+
+        <!-- KAULIUKAI -->
+        <div class="game hidden" id="g-dc">
+          <div class="felt dc-felt">
+            <div class="center"><div class="small up">Iškrito</div><div id="dcNum" class="bignum">50,00</div><div id="dcMsg" class="msg">Pasirink ribą ir spausk „Mesti“.</div></div>
+            <div class="dc-bar"><div id="dcWin" class="dc-win"></div><div id="dcMark" class="dc-mark"></div></div>
+            <div class="row center"><button class="btn round" id="dcMinus" type="button">−</button><input id="dcRange" type="range" min="2" max="98" value="50" aria-label="Riba" /><button class="btn round" id="dcPlus" type="button">+</button></div>
+            <div class="stats" id="dcStats"></div>
+            <div id="dcHist" class="hist-chips"></div>
+          </div>
+          <div class="controls">
+            <div class="seg"><button class="segb active" data-dcmode="under" type="button">Žemiau ribos</button><button class="segb" data-dcmode="over" type="button">Virš ribos</button></div>
+            <div class="chips" data-chips="dc"></div>
+            <div class="row wrap">
+              <input id="dcBetIn" inputmode="decimal" placeholder="Bet kokia suma, €" />
+              <button class="btn" id="dcHalf" type="button">½</button>
+              <button class="btn" id="dcDouble" type="button">×2</button>
+              <label class="toggle"><input type="checkbox" id="dcMax" /> Max (visas balansas)</label>
+            </div>
+            <div class="row wrap">
+              <button class="btn primary" id="dcRoll" type="button">Mesti</button>
+              <button class="btn" id="dcAuto10" type="button">Automatiškai ×10</button>
+              <button class="btn" id="dcAuto25" type="button">Automatiškai ×25</button>
+              <button class="btn ghost hidden" id="dcStop" type="button">Stabdyti</button>
+            </div>
+            <div id="dcInfo" class="small"></div>
+          </div>
+          <details class="rules"><summary>Kauliukų taisyklės</summary>
+            <p>Skaičius nuo 0,00 iki 99,99. „Žemiau ribos“ laimi, kai skaičius mažesnis už ribą, „Virš ribos“ – kai lygus ar didesnis. Daugiklis 99 / tikimybė, todėl grąžinimas 99 % (išmoka apvalinama žemyn iki cento).</p>
+            <p>Statymo viršutinės ribos nėra: gali statyti bet kokią sumą iki viso balanso. „Max“ kiekvienam metimui stato visą tuo metu turimą balansą, taip pat ir automatiniame režime. Kauliukai žaidžiami individualiai.</p>
+          </details>
+        </div>
+
+        <!-- AUTOMATAS -->
+        <div class="game hidden" id="g-sl">
+          <div class="felt sl-felt">
+            <div class="reels"><div class="reel" id="r0">🍒</div><div class="reel" id="r1">7️⃣</div><div class="reel" id="r2">🔔</div></div>
+            <div id="slMsg" class="msg">Pasirink statymą ir suk.</div>
+          </div>
+          <div class="controls">
+            <div class="chips" data-chips="sl"></div>
+            <div class="row wrap"><button class="btn primary" id="slSpin" type="button">Sukti</button></div>
+          </div>
+          <details class="rules" open><summary>Automato išmokos</summary><div id="slRules"></div></details>
+        </div>
+      </main>
+
+      <aside class="side">
+        <div class="box">
+          <div class="box-h">🟢 Dabar žaidžia <span id="onlineCount" class="small"></span></div>
+          <ol id="players" class="players"></ol>
+        </div>
+        <div class="box">
+          <div class="box-h">🏆 Lyderiai</div>
+          <ol id="leaders" class="players"></ol>
+        </div>
+        <div class="box chatbox">
+          <div class="box-h">💬 Bendras pokalbis</div>
+          <div id="chat" class="chat"></div>
+          <div class="row"><input id="chatIn" maxlength="300" placeholder="Rašyk žinutę…" /><button id="chatSend" class="btn small" type="button">Siųsti</button></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <div id="profModal" class="modal hidden"><div class="modal-card" id="profModalBody"></div></div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Render.com Blueprint: nemokama Web Service.
+# Duomenų bazė – nemokama Neon PostgreSQL (žr. README_LT.md); jos adresą
+# įvesk Render skydelyje kaip DATABASE_URL (sync: false – reikšmė neįrašoma į repozitoriją).
+services:
+  - type: web
+    name: kazino-multiplayer
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_NICK
+        sync: false
