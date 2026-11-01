@@ -37,6 +37,23 @@ CREATE TABLE IF NOT EXISTS open_bets (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS open_bets_round ON open_bets(round_key, user_id);
+CREATE TABLE IF NOT EXISTS inventory (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  skin_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS inventory_user ON inventory(user_id, id);
+CREATE TABLE IF NOT EXISTS skin_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  nick TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS skin_events_created ON skin_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS skin_events_user ON skin_events(user_id, id DESC);
 `,
   pg: `
 CREATE TABLE IF NOT EXISTS users (
@@ -68,6 +85,23 @@ CREATE TABLE IF NOT EXISTS open_bets (
   created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS open_bets_round ON open_bets(round_key, user_id);
+CREATE TABLE IF NOT EXISTS inventory (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  skin_id TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS inventory_user ON inventory(user_id, id);
+CREATE TABLE IF NOT EXISTS skin_events (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  nick TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS skin_events_created ON skin_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS skin_events_user ON skin_events(user_id, id DESC);
 `,
 };
 
@@ -158,6 +192,63 @@ class Db {
         return out;
       } catch (e) {
         this.sql.exec('ROLLBACK');
+        throw e;
+      }
+    };
+    const p = this.queue.then(run);
+    this.queue = p.catch((e) => {
+      this.failures++;
+      console.error('DB transakcijos klaida:', e.message);
+    });
+    return p;
+  }
+
+  // Viena transakcija su skaitymais viduje (SELECT … FOR UPDATE / last id).
+  // fn negali kviesti db.all / db.tx – kitaip eilė užsiciklintų.
+  transaction(fn) {
+    const run = async () => {
+      if (this.kind === 'pg') {
+        const c = await this.pool.connect();
+        const api = {
+          all: async (sql, params = []) => (await c.query(toPg(sql), params)).rows,
+          get: async (sql, params = []) => (await api.all(sql, params))[0] || null,
+          run: async (sql, params = []) => {
+            let q = sql;
+            if (/^\s*insert\s/i.test(q) && !/\breturning\b/i.test(q)) q = q.replace(/;\s*$/, '') + ' RETURNING id';
+            const r = await c.query(toPg(q), params);
+            const id = r.rows[0] && r.rows[0].id != null ? Number(r.rows[0].id) : null;
+            return { changes: r.rowCount, lastId: id };
+          },
+        };
+        try {
+          await c.query('BEGIN');
+          const out = await fn(api);
+          await c.query('COMMIT');
+          return out;
+        } catch (e) {
+          await c.query('ROLLBACK').catch(() => {});
+          throw e;
+        } finally {
+          c.release();
+        }
+      }
+      this.sql.exec('BEGIN IMMEDIATE');
+      const api = {
+        all: (sql, params = []) => this.prep(sql).all(...params),
+        get: (sql, params = []) => this.prep(sql).get(...params) || null,
+        run: (sql, params = []) => {
+          const r = this.prep(sql).run(...(params || []));
+          return { changes: Number(r.changes), lastId: Number(r.lastInsertRowid) };
+        },
+      };
+      try {
+        const out = await fn(api);
+        this.sql.exec('COMMIT');
+        return out;
+      } catch (e) {
+        try {
+          this.sql.exec('ROLLBACK');
+        } catch (_) {}
         throw e;
       }
     };

@@ -11,13 +11,42 @@ Tai **vienas bendras kazino** visiems: jokių kambarių ar kodų. Kiekvienas sus
 | 🎡 Laimės ratas | vienas bendras visiems, žaidėjų skaičius neribojamas | 54 segmentai, daugiklio langelis, 4 premijos, grąžinimas apie 95 % kiekvienam statymui |
 | 🎲 Kauliukai | individualiai | 99 % grąžinimas |
 | 🍒 Automatas | individualiai | 3 būgnai, 95,15 % grąžinimas |
+| 📦 Upgrader | dėžės, parduotuvė, inventorius | Išgalvoti ginklų skinai. Dėžių grąžinimas apie 90 %, pardavimas atgal 90 %, upgraderio tikimybė = įnašas / tikslas × 93 % (ribos 1–80 %) |
+
+Viršuje yra du skyriai: **Kazino** (blackjack, ruletė, Laimės ratas, kauliukai, automatas) ir **Upgrader**. Balansas visada matomas viršuje. Sąsaja pritaikyta telefonui.
 
 Taip pat yra:
 - bendras pokalbis;
 - sąrašas „Dabar žaidžia“;
 - **lyderių lentelė**: 10 turtingiausių žaidėjų iš duomenų bazės, įskaitant atsijungusius;
 - profilis: avataras, sužaistų raundų skaičius, didžiausias laimėjimas, iš viso pastatyta;
-- balanso papildymas žaidimo pinigais („Papildyti balansą“).
+- balanso papildymas žaidimo pinigais („Papildyti balansą“);
+- **Upgraderio** inventorius, dėžės, parduotuvė ir bendra skinų juosta.
+
+---
+
+## Upgrader (žaidimo pinigai)
+
+Skyrius „Upgrader“ naudoja tuos pačius paskyrų balansus. **Skinų negalima iškeisti, išsiimti ar parduoti už tikrus pinigus.** Nėra mokėjimų, kortelių, banko ar prizų.
+
+Skinai yra išgalvoti (pvz. „AK-X | Gintarinis žaibas“). Paveikslėliai braižomi naršyklėje pagal retumo spalvą. Retumo pakopos: Gatvės, Dirbtuvės, Lauko, Ribotas, Slaptas, Mitinis, Legendinis. Būklė: Gamyklinis, Beveik naujas, Išbandytas, Nusidėvėjęs, Mūšio randai. Kiekvienas skinas turi fiksuotą žaidimo eurų vertę.
+
+Kaip gauti skiną:
+
+- **Dėžės** (Smėlio, Nakties, Perkūno, Karūnos). Kaina parinkta taip, kad teorinis grąžinimas būtų apie **90 %** (tikslus procentas rodomas prie dėžės). Iškritimą nustato serveris; juosta ekrane tik animacija. Visos tikimybės išvardytos.
+- **Parduotuvė** parduoda bet kurį katalogo skiną už jo vertę.
+- **Pardavimas** grąžina **90 %** vertės (centai apvalinami žemyn).
+
+**Upgraderis.** Įdedi vieną ar kelis savo skinus ir, jei nori, dalį balanso. Pasirenki tikslo skiną ir pusę: „žemiau“ arba „virš“.
+
+- Neapkarpyta tikimybė = `floor(įnašas × 9300 / tikslo vertė) / 10000`, tai yra įnašas / tikslas × **93 %** (namų dalis 7 %), apvalinta žemyn.
+- Jei išeitų mažiau nei **1 %**, metimas atmetamas.
+- Jei išeitų daugiau nei **80 %**, tikimybė nukerpama iki 80 % (tada grąža mažesnė nei 93 %).
+- Serveris meta `crypto.randomInt(10000)`. „Žemiau“ laimi, kai metimas `< tikimybė`. „Virš“ laimi, kai metimas `≥ 10000 − tikimybė`.
+- Laimėjus gauni tikslo skiną, pralaimėjus įnašas prarandamas.
+- Viskas vienoje DB transakcijoje. Tas pats daiktas negali būti panaudotas du kartus.
+
+Inventorius saugomas lentelėje `inventory`, įvykiai – `skin_events`. Senesnė duomenų bazė (tik `users` / `sessions` / `open_bets`) papildoma šiomis lentelėmis paleidžiant serverį; **esami balansai neperrašomi**. Bendroje juostoje matyti paskutinės dėžės ir upgraderio metimai, profilyje – tavo istorija.
 
 ---
 
@@ -147,7 +176,8 @@ Alternatyva: repozitorijoje yra `render.yaml`, todėl galima rinktis **New + →
 - Visos sumos saugomos **centais** (sveikais skaičiais), todėl apvalinimo klaidų nėra.
 - **Statymo metu:** viena DB transakcija nurašo sumą iš balanso ir įrašo statymą į lentelę `open_bets`.
 - **Raundo pabaigoje:** viena transakcija įskaito išmokas, atnaujina statistiką ir ištrina raundo `open_bets`.
-- **Paleidžiant serverį:** visi likę `open_bets` (nebaigti raundai) grąžinami žaidėjams.
+- **Paleidžiant serverį:** visi likę `open_bets` (nebaigti raundai) grąžinami žaidėjams. Dėžės, parduotuvė, pardavimas ir upgraderis nėra „atviri raundai“: jie arba įrašyti iki galo, arba (jei transakcija nutrūksta) neįrašyti visai, todėl daiktai ir balansas nepasidalina pusiau.
+- **Inventorius** rašomas toje pačioje transakcijoje kaip balanso pokytis.
 - Atsakymas naršyklei siunčiamas tik tada, kai DB įrašas baigtas.
 - Visus rezultatus (kortas, ruletę, ratą, kauliukus) nustato tik serveris (`crypto` atsitiktiniai skaičiai). Naršyklė tik rodo animaciją.
 
@@ -169,7 +199,8 @@ kazino-multiplayer/
 │   ├── blackjack.js     Blackjack taisyklės, šalutiniai statymai, ėjimo laikas (TURN_MS)
 │   ├── roulette.js      ruletės statymai ir išmokos
 │   ├── wheel.js         Laimės rato segmentai, daugikliai, premijos, RTP
-│   └── solo.js          Kauliukai ir Automatas
+│   ├── solo.js          Kauliukai ir Automatas
+│   └── skins.js         skinų katalogas, dėžės, parduotuvė, upgraderio tikimybės
 ├── public/
 │   ├── index.html       puslapio struktūra, taisyklių tekstai
 │   ├── style.css        išvaizda (spalvos: :root kintamieji viršuje)
@@ -183,6 +214,7 @@ Dažniausi pakeitimai:
 - **Statymų laikas:** `super(room, ..., 20000)` klasių konstruktoriuose (`src/blackjack.js`, `src/roulette.js`, `src/wheel.js`), milisekundėmis.
 - **Avatarai:** `src/auth.js`, `AVATARS`.
 - **Žetonų reikšmės:** `public/app.js`, `CHIPS`.
+- **Skinų vertės, dėžių svoriai, upgraderio 93 % / 1–80 %:** `src/skins.js` (`KEEP_BP`, `MIN_BP`, `MAX_BP`, `SELL_NUM`).
 
 ## 7. Testas
 
@@ -194,7 +226,9 @@ Testas paleidžia serverį su laikina SQLite duomenų baze, prijungia virtualius
 - registraciją, prisijungimą, pasikartojantį slapyvardį, blogą slaptažodį ir bandymų ribą;
 - sesijos atkūrimą ir seno lango išmetimą;
 - visus žaidimus ir kelis Blackjack stalus vienu metu;
-- **serverio nužudymą (`kill -9`) vykstant raundams:** po perkrovimo balansai turi išlikti, o atviri statymai turi būti grąžinti.
+- dėžių, parduotuvės, pardavimo ir upgraderio tikimybes, laimėjimą/pralaimėjimą, balanso ir inventoriaus sutapimą, apsaugą nuo dvigubo to paties daikto panaudojimo;
+- senos duomenų bazės migraciją (balansas išlieka, atsiranda `inventory` ir `skin_events`);
+- **serverio nužudymą (`kill -9`) vykstant raundams:** po perkrovimo balansai turi išlikti, o atviri statymai turi būti grąžinti. Inventorius ir jau įrašytas balansas irgi išlieka.
 
 Su PostgreSQL: `DATABASE_URL=postgres://… npm test`. ⚠️ Testas **ištrina lenteles** toje duomenų bazėje, todėl naudok tik tuščią testinę bazę, ne tikrąją.
 

@@ -4,6 +4,7 @@
 // transakcija. Statymai, kol raundas neišspręstas, saugomi lentelėje open_bets –
 // jei serveris nukrenta, kitą kartą paleidus jie grąžinami žaidėjams.
 const { START_BALANCE, BALANCE_CAP } = require('./money');
+const { loadFeed } = require('./skins');
 const { BlackjackTable } = require('./blackjack');
 const { RouletteTable } = require('./roulette');
 const { WheelTable } = require('./wheel');
@@ -18,6 +19,7 @@ class Casino {
     this.users = new Map(); // nick_lc -> vartotojas atmintyje
     this.chat = [];
     this.leaders = [];
+    this.skinFeed = [];
     this.pending = null;
     this.leadersTimer = null;
     this.rl = new RouletteTable(this);
@@ -36,6 +38,7 @@ class Casino {
       console.log('Grąžinti neužbaigti statymai: ' + open.n + ' vnt., ' + (Number(open.s) / 100).toFixed(2) + ' €');
     }
     this.refunded = open ? { count: Number(open.n), sum: Number(open.s) } : { count: 0, sum: 0 };
+    this.skinFeed = await loadFeed(this.db);
     await this.refreshLeaders();
   }
 
@@ -369,6 +372,7 @@ class Casino {
       rl: this.rl.state(),
       lt: this.lt.state(),
       bjTables: this.bj.map((t) => ({ num: t.num, title: t.title, seated: [...t.seated], max: BJ_SEATS, phase: t.phase })),
+      skinFeed: this.skinFeed,
     };
   }
 

@@ -122,6 +122,7 @@ function enterApp(user, resumed) {
   $('meName').textContent = 'Tu: ' + user.name;
   $('adminBox').classList.toggle('hidden', !me.admin);
   if (resumed) toast('Sveikas sugrįžęs, ' + user.name + '!', true);
+  loadSkins();
 }
 async function doAuth() {
   const nick = $('nickIn').value.trim();
@@ -316,6 +317,7 @@ socket.on('state', (st) => {
   renderLT();
   renderDice();
   renderSlotBtn();
+  renderFeed();
 });
 
 function renderPlayers() {
@@ -898,6 +900,386 @@ function buildSlotRules() {
     '<tr><td>🍒🍒 pirmuose dviejuose būgnuose</td><td>×' + s.twoCherry + '</td></tr></table><p>Vienas laimėjimo linijos būgnų rinkinys. Išmoka apima statymą. Tikslus teorinis grąžinimas ' + (s.rtp * 100).toFixed(2).replace('.', ',') + ' %. Žaidžiama individualiai.</p>';
 }
 
+/* ---------- skyriai ir Upgrader ---------- */
+let section = 'casino';
+let upTab = 'cases';
+let INV = [];
+let HIST = [];
+let picked = new Set();
+let upTarget = null;
+let upSide = 'under';
+let upCash = 0;
+let upLock = false;
+let shopR = 'all';
+let builtUp = false;
+let feedKey = '';
+
+function shadeHex(hex, amt) {
+  const n = parseInt(String(hex).slice(1), 16);
+  const ch = (shift) => Math.max(0, Math.min(255, ((n >> shift) & 255) + amt));
+  return '#' + [ch(16), ch(8), ch(0)].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+function weaponSvg(weapon, color) {
+  const dark = shadeHex(color, -48);
+  const light = shadeHex(color, 48);
+  const body = {
+    ak: '<path d="M18 58h70l8-10h78l10 6h28v8H108l-6 8H28l-8 6H18z" fill="' + color + '"/><path d="M40 70h18v16h-10l-8-16z" fill="' + dark + '"/><circle cx="200" cy="58" r="6" fill="' + light + '"/>',
+    varnis: '<path d="M30 48h70v16H78l-8 14H54l6-14H30z" fill="' + color + '"/><rect x="100" y="52" width="36" height="8" rx="2" fill="' + dark + '"/>',
+    pulsas: '<path d="M24 50h90l12-8h40v10H120l-8 12H36l-8 8H24z" fill="' + color + '"/><rect x="48" y="62" width="14" height="18" fill="' + dark + '"/>',
+    medziotojas: '<path d="M12 54h150l8-6h50v8H168l-6 8H20z" fill="' + color + '"/><circle cx="214" cy="54" r="7" fill="' + light + '"/><rect x="70" y="62" width="10" height="20" fill="' + dark + '"/>',
+    sratas: '<path d="M28 46h60l20 8h40v12H100l-16 10H40l-8 8H28z" fill="' + color + '"/><rect x="48" y="66" width="16" height="16" fill="' + dark + '"/>',
+    kibirkstis: '<path d="M48 46h54v14H78l-6 16H58l5-16H48z" fill="' + color + '"/><rect x="102" y="50" width="28" height="7" fill="' + dark + '"/>',
+    asmenys: '<path d="M36 78 150 28l14 10L58 86z" fill="' + color + '"/><path d="M150 28l28-8 6 16-20 6z" fill="' + light + '"/><path d="M36 78l-8 10 22 4z" fill="' + dark + '"/>',
+    lokys: '<path d="M16 48h80l10-12h70v14H110l-8 14H28z" fill="' + color + '"/><rect x="36" y="62" width="46" height="12" fill="' + dark + '"/><circle cx="190" cy="46" r="8" fill="' + light + '"/>',
+  }[weapon] || '<rect x="30" y="40" width="180" height="28" rx="8" fill="' + color + '"/>';
+  return '<svg viewBox="0 0 240 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' + body + '</svg>';
+}
+function skinById(id) {
+  return CFG && CFG.skins ? CFG.skins.items.find((s) => s.id === id) : null;
+}
+function rarityOf(id) {
+  return CFG.skins.rarities.find((r) => r.id === id);
+}
+function wearOf(id) {
+  return CFG.skins.wears.find((w) => w.id === id);
+}
+function pctNum(x) {
+  return (x * 100).toFixed(2).replace('.', ',') + ' %';
+}
+function pctBp(bp) {
+  return (bp / 100).toFixed(2).replace('.', ',') + ' %';
+}
+function clientChance(input, target) {
+  const u = CFG.skins.upgrade;
+  if (!Number.isSafeInteger(input) || !Number.isSafeInteger(target) || input <= 0 || target <= 0) return null;
+  const raw = Math.floor((input * u.keepBp) / target);
+  if (raw < u.minBp) return null;
+  return { bp: Math.min(raw, u.maxBp), raw };
+}
+function skinCardHtml(skin, opts) {
+  opts = opts || {};
+  const r = rarityOf(skin.rarity);
+  const w = wearOf(skin.wear);
+  return '<button type="button" class="skin-card' + (opts.selected ? ' sel' : '') + '" style="--r:' + r.color + '" ' + (opts.attrs || '') + '><div class="art">' + weaponSvg(skin.weapon, r.color) + '</div><div class="rname">' + esc(r.name) + '</div><div class="sname">' + esc(skin.name) + '</div><div class="wear">' + esc(w.name) + '</div><div class="price">' + fmt(opts.price != null ? opts.price : skin.value) + '</div></button>';
+}
+function arcPath(cx, cy, r, a0, a1) {
+  const span = a1 - a0;
+  if (span <= 0.0001) return '';
+  const ang = (f) => f * 2 * Math.PI - Math.PI / 2;
+  const p0 = ang(a0);
+  const p1 = ang(a1);
+  const x0 = cx + r * Math.cos(p0);
+  const y0 = cy + r * Math.sin(p0);
+  const x1 = cx + r * Math.cos(p1);
+  const y1 = cy + r * Math.sin(p1);
+  return 'M ' + x0.toFixed(2) + ' ' + y0.toFixed(2) + ' A ' + r + ' ' + r + ' 0 ' + (span > 0.5 ? 1 : 0) + ' 1 ' + x1.toFixed(2) + ' ' + y1.toFixed(2);
+}
+function setSection(name) {
+  section = name;
+  qsa('[data-section]').forEach((b) => b.classList.toggle('active', b.dataset.section === name));
+  $('sec-casino').classList.toggle('hidden', name !== 'casino');
+  $('sec-up').classList.toggle('hidden', name !== 'up');
+  $('gameNav').classList.toggle('hidden', name !== 'casino');
+  $('upNav').classList.toggle('hidden', name !== 'up');
+  if (name === 'up') refreshUp();
+}
+qsa('[data-section]').forEach((b) => (b.onclick = () => setSection(b.dataset.section)));
+function setUp(name) {
+  upTab = name;
+  qsa('[data-up]').forEach((b) => b.classList.toggle('active', b.dataset.up === name));
+  ['cases', 'shop', 'upgrade', 'inv', 'hist'].forEach((id) => $('up-' + id).classList.toggle('hidden', id !== name));
+  refreshUp();
+}
+qsa('[data-up]').forEach((b) => (b.onclick = () => setUp(b.dataset.up)));
+
+function renderFeed() {
+  if (!S) return;
+  const list = S.skinFeed || [];
+  const key = list.map((e) => e.id).join(',');
+  const el = $('feed');
+  if (!el || key === feedKey) return;
+  feedKey = key;
+  if (!list.length) {
+    el.innerHTML = '<div class="small">Dar nėra dėžių ar upgraderio.</div>';
+    return;
+  }
+  el.innerHTML = list
+    .map((e) => {
+      const p = e.payload || {};
+      const skin = skinById(p.skinId || p.targetId);
+      let what = e.kind;
+      if (e.kind === 'case' && skin) what = 'dėžė · ' + skin.name;
+      else if (e.kind === 'upgrade' && skin) what = (p.won ? 'laimėjo' : 'nepasisekė') + ' · ' + skin.name;
+      const cls = e.kind === 'upgrade' ? (p.won ? 'win' : 'lose') : '';
+      return '<div class="ev"><span>' + esc(e.nick) + '</span><span class="' + cls + '">' + esc(what) + '</span></div>';
+    })
+    .join('');
+}
+
+function buildUpgrader() {
+  if (builtUp || !CFG || !CFG.skins) return;
+  builtUp = true;
+  const edge = pctNum(CFG.skins.upgrade.edge);
+  $('up-cases').innerHTML = '<div id="caseReel" class="reel-window hidden"></div><div id="caseMsg" class="up-result"></div><div id="caseGrid" class="case-grid"></div>';
+  $('up-shop').innerHTML = '<p class="small">Kaina lygi katalogo vertei. Pardavus atgauni ' + CFG.skins.sell.num + ' % (centai apvalinami žemyn).</p><div id="shopFilters" class="filters"></div><div id="shopGrid" class="skin-grid"></div>';
+  $('up-upgrade').innerHTML =
+    '<div class="dial-wrap"><div class="dial"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="78" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="14"/><path id="upArc" fill="none" stroke="#7dffb0" stroke-width="14"/></svg><div id="upPointer" class="dial-pointer"></div><div class="dial-read"><span class="small">Tikimybė</span><b id="upChance">—</b></div></div><div><div class="seg"><button class="segb active" id="sideUnder" type="button">Žemiau</button><button class="segb" id="sideOver" type="button">Virš</button></div><p class="small">Tikimybė = įnašo vertė / tikslo vertė × ' + (100 - CFG.skins.upgrade.edge * 100).toFixed(0) + ' %. Mažiausia 1 %, didžiausia 80 %. Virš 80 % ji nukerpama (tada grąža mažesnė). Namų dalis ' + edge + '. Metimą renka serveris. Pralaimėjus įnašas prarandamas, laimėjus gauni tikslo skiną.</p><div class="row wrap"><input id="upCashIn" inputmode="decimal" placeholder="Pridėti iš balanso, €" /><button class="btn" id="upCashBtn" type="button">Įdėti sumą</button><button class="btn ghost" id="upCashClear" type="button">Iš balanso 0</button></div><div id="upPick" class="small"></div><div id="upMsg" class="up-result"></div><button class="btn primary wide" id="upGo" type="button">Sukti</button></div></div><h3 class="panel-h">Pasirink įdedamus skinus</h3><div id="upInputs" class="skin-grid"></div><h3 class="panel-h">Tikslas</h3><div id="upTargets" class="skin-grid"></div>';
+  $('up-inv').innerHTML = '<div class="row wrap"><button class="btn primary" id="invSell" type="button">Parduoti pažymėtus</button><button class="btn" id="invToUp" type="button">Į Upgraderį</button></div><div id="invGrid" class="skin-grid"></div>';
+  $('up-hist').innerHTML = '<div id="histList" class="hist-list"></div>';
+  $('caseGrid').innerHTML = CFG.skins.cases
+    .map((c) => {
+      const rows = c.drops
+        .map((d) => {
+          const s = skinById(d.id);
+          return '<tr><td>' + esc(s.name) + '</td><td>' + pctNum(d.p) + '</td></tr>';
+        })
+        .join('');
+      return '<article class="case-card"><h3>' + esc(c.name) + '</h3><p class="small">' + esc(c.blurb) + '</p><b>' + fmt(c.price) + '</b><p class="small">Teorinis grąžinimas ' + pctNum(c.rtp) + ' · vidutinė iškrito vertė ' + fmt(c.ev) + '.</p><table class="odds">' + rows + '</table><button class="btn primary" type="button" data-case="' + c.id + '">Atidaryti</button></article>';
+    })
+    .join('');
+  $('caseGrid').onclick = (e) => {
+    const b = e.target.closest('[data-case]');
+    if (b) openCase(b.dataset.case);
+  };
+  const filters = [{ id: 'all', name: 'Visi' }].concat(CFG.skins.rarities);
+  $('shopFilters').innerHTML = filters.map((f) => '<button type="button" class="btn small' + (f.id === 'all' ? ' primary' : '') + '" data-rar="' + f.id + '">' + esc(f.name) + '</button>').join('');
+  $('shopFilters').onclick = (e) => {
+    const b = e.target.closest('[data-rar]');
+    if (!b) return;
+    shopR = b.dataset.rar;
+    [...$('shopFilters').children].forEach((x) => x.classList.toggle('primary', x.dataset.rar === shopR));
+    renderShop();
+  };
+  $('sideUnder').onclick = () => {
+    upSide = 'under';
+    $('sideUnder').classList.add('active');
+    $('sideOver').classList.remove('active');
+    refreshUp();
+  };
+  $('sideOver').onclick = () => {
+    upSide = 'over';
+    $('sideOver').classList.add('active');
+    $('sideUnder').classList.remove('active');
+    refreshUp();
+  };
+  $('upCashBtn').onclick = () => {
+    const v = parseEur($('upCashIn').value);
+    if (!v) return toast('Įvesk sumą nuo 0,01 €');
+    if (v > myBal) return toast('Nepakanka balanso');
+    upCash = v;
+    refreshUp();
+  };
+  $('upCashClear').onclick = () => {
+    upCash = 0;
+    $('upCashIn').value = '';
+    refreshUp();
+  };
+  $('upGo').onclick = doUpgrade;
+  $('invSell').onclick = () => sellIds([...picked]);
+  $('invToUp').onclick = () => setUp('upgrade');
+  $('upInputs').onclick = (e) => togglePick(e);
+  $('invGrid').onclick = (e) => togglePick(e);
+  $('upTargets').onclick = (e) => {
+    const b = e.target.closest('[data-target]');
+    if (!b) return;
+    upTarget = b.dataset.target;
+    refreshUp();
+  };
+  $('shopGrid').onclick = (e) => {
+    const b = e.target.closest('[data-buy]');
+    if (b) buySkin(b.dataset.buy);
+  };
+  renderShop();
+  renderTargets();
+  refreshUp();
+}
+function renderShop() {
+  if (!builtUp) return;
+  const items = CFG.skins.items.filter((s) => shopR === 'all' || s.rarity === shopR);
+  $('shopGrid').innerHTML = items.map((s) => skinCardHtml(s, { attrs: 'data-buy="' + s.id + '"' })).join('');
+}
+function renderTargets() {
+  if (!builtUp) return;
+  $('upTargets').innerHTML = CFG.skins.items.map((s) => skinCardHtml(s, { selected: s.id === upTarget, attrs: 'data-target="' + s.id + '"' })).join('');
+}
+function itemCards() {
+  if (!INV.length) return '<p class="small">Inventorius tuščias. Atidaryk dėžę arba nusipirk skiną.</p>';
+  return INV.map((it) => {
+    const s = skinById(it.skinId);
+    if (!s) return '';
+    return skinCardHtml(s, { selected: picked.has(it.id), attrs: 'data-item="' + it.id + '"' });
+  }).join('');
+}
+function togglePick(e) {
+  const b = e.target.closest('[data-item]');
+  if (!b || upLock) return;
+  const id = Number(b.dataset.item);
+  if (picked.has(id)) picked.delete(id);
+  else picked.add(id);
+  refreshUp();
+}
+function selectedSkinValue() {
+  let v = 0;
+  for (const id of picked) {
+    const it = INV.find((x) => x.id === id);
+    const s = it && skinById(it.skinId);
+    if (s) v += s.value;
+  }
+  return v;
+}
+function refreshUp() {
+  if (!builtUp) return;
+  for (const id of [...picked]) if (!INV.some((x) => x.id === id)) picked.delete(id);
+  $('invGrid').innerHTML = itemCards();
+  $('upInputs').innerHTML = itemCards();
+  renderTargets();
+  const input = selectedSkinValue() + upCash;
+  const target = upTarget ? skinById(upTarget) : null;
+  const ch = target ? clientChance(input, target.value) : null;
+  $('upChance').textContent = ch ? pctBp(ch.bp) : '—';
+  drawDial(ch ? ch.bp : 0, upSide);
+  const parts = [];
+  if (selectedSkinValue()) parts.push('skinai ' + fmt(selectedSkinValue()));
+  if (upCash) parts.push('balansas ' + fmt(upCash));
+  $('upPick').textContent = (parts.join(' + ') || 'Įnašas tuščias') + (target ? ' → ' + target.name + ' (' + fmt(target.value) + ')' : '') + (ch && ch.raw > ch.bp ? ' · tikimybė nukirpta iki 80 %' : '');
+  $('upGo').disabled = upLock || !ch;
+  $('histList').innerHTML = HIST.length
+    ? HIST.map((h) => {
+        const p = h.payload || {};
+        const s = skinById(p.skinId || p.targetId);
+        let t = h.kind;
+        if (h.kind === 'case' && s) t = 'Dėžė: ' + s.name + ' (' + fmt(p.value) + ')';
+        if (h.kind === 'buy' && s) t = 'Pirkai: ' + s.name;
+        if (h.kind === 'sell') t = 'Pardavei už ' + fmt(p.payout || 0);
+        if (h.kind === 'upgrade' && s) t = (p.won ? 'Upgraderis laimėtas: ' : 'Upgraderis pralaimėtas: ') + s.name + ' · ' + pctBp(p.chanceBp || 0);
+        return '<div class="ev"><span>' + esc(t) + '</span><span class="small">' + new Date(h.createdAt).toLocaleString('lt-LT') + '</span></div>';
+      }).join('')
+    : '<p class="small">Istorija tuščia.</p>';
+}
+function drawDial(bp, side) {
+  const arc = $('upArc');
+  if (!arc) return;
+  const p = (bp || 0) / 10000;
+  const start = side === 'over' ? 1 - p : 0;
+  const end = side === 'over' ? 1 : p;
+  arc.setAttribute('d', arcPath(100, 100, 78, start, end));
+}
+function animateCase(caseId, skinId) {
+  return new Promise((resolve) => {
+    const kase = CFG.skins.cases.find((c) => c.id === caseId);
+    const win = skinById(skinId);
+    const pool = kase.drops.map((d) => skinById(d.id));
+    const cards = [];
+    for (let i = 0; i < 46; i++) cards.push(pool[Math.floor(Math.random() * pool.length)]);
+    cards[40] = win;
+    const strip = document.createElement('div');
+    strip.className = 'reel-strip';
+    strip.innerHTML = cards.map((s) => skinCardHtml(s, {})).join('');
+    const box = $('caseReel');
+    box.classList.remove('hidden');
+    box.innerHTML = '<div class="reel-mark"></div>';
+    box.appendChild(strip);
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const dur = reduce ? 0 : 4600;
+    const cardW = 140;
+    const center = box.clientWidth / 2 - 66;
+    const jitter = reduce ? 0 : (Math.random() - 0.5) * 30;
+    strip.style.transform = 'translateX(0px)';
+    requestAnimationFrame(() => {
+      strip.style.transition = 'transform ' + dur + 'ms cubic-bezier(.12,.7,.08,1)';
+      strip.style.transform = 'translateX(' + -(40 * cardW - center + jitter) + 'px)';
+    });
+    setTimeout(resolve, dur + 60);
+  });
+}
+function spinDial(roll) {
+  return new Promise((resolve) => {
+    const el = $('upPointer');
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const dur = reduce ? 0 : 4200;
+    const angle = (roll / 10000) * 360 + (reduce ? 0 : 5 * 360);
+    el.style.transition = 'none';
+    el.style.transform = 'rotate(0deg)';
+    void el.offsetWidth;
+    requestAnimationFrame(() => {
+      el.style.transition = 'transform ' + dur + 'ms cubic-bezier(.12,.75,.05,1)';
+      el.style.transform = 'rotate(' + angle + 'deg)';
+    });
+    setTimeout(resolve, dur + 40);
+  });
+}
+async function loadSkins() {
+  if (!me.in) return;
+  const r = await send('skins:get', {}, true);
+  if (!r.ok) return;
+  INV = r.items || [];
+  HIST = r.history || [];
+  refreshUp();
+}
+async function openCase(id) {
+  if (upLock) return;
+  upLock = true;
+  const res = await send('case:open', id);
+  if (!res.ok) {
+    upLock = false;
+    return;
+  }
+  INV = res.items || INV;
+  $('caseMsg').textContent = 'Sukama…';
+  await animateCase(id, res.skinId);
+  const s = skinById(res.skinId);
+  $('caseMsg').textContent = 'Iškrito ' + (s ? s.name : '') + ' · ' + fmt(s ? s.value : 0);
+  upLock = false;
+  refreshUp();
+  loadSkins();
+}
+async function buySkin(id) {
+  if (upLock) return;
+  upLock = true;
+  const r = await send('shop:buy', id);
+  upLock = false;
+  if (!r.ok) return;
+  INV = r.items || INV;
+  toast('Skinas inventoriaus', true);
+  refreshUp();
+  loadSkins();
+}
+async function sellIds(ids) {
+  if (upLock || !ids.length) return toast('Pažymėk skiną');
+  upLock = true;
+  const r = await send('skin:sell', ids);
+  upLock = false;
+  if (!r.ok) return;
+  INV = r.items || INV;
+  ids.forEach((id) => picked.delete(Number(id)));
+  toast('Parduota už ' + fmt(r.payout), true);
+  refreshUp();
+  loadSkins();
+}
+async function doUpgrade() {
+  if (upLock || !upTarget) return;
+  const items = [...picked].filter((id) => INV.some((x) => x.id === id));
+  upLock = true;
+  $('upGo').disabled = true;
+  const r = await send('upgrade:roll', { items, cash: upCash, target: upTarget, side: upSide });
+  if (!r.ok) {
+    upLock = false;
+    refreshUp();
+    return;
+  }
+  drawDial(r.chanceBp, r.side);
+  await spinDial(r.roll);
+  INV = r.items || INV;
+  picked.clear();
+  upCash = 0;
+  if ($('upCashIn')) $('upCashIn').value = '';
+  $('upMsg').textContent = r.won ? 'Laimėjai ' + (skinById(r.targetId) || {}).name : 'Nepasisekė – įnašas prarastas';
+  $('upMsg').className = 'up-result ' + (r.won ? 'win' : 'lose');
+  upLock = false;
+  refreshUp();
+  loadSkins();
+}
+
 /* ---------- paleidimas ---------- */
 fetch('/config.json')
   .then((r) => r.json())
@@ -909,6 +1291,7 @@ fetch('/config.json')
     renderChips();
     renderDice();
     renderSlotBtn();
+    buildUpgrader();
     avatarPicker($('regAvatars'), regAvatar, (a) => (regAvatar = a));
     $('nickIn').value = localStorage.getItem('kazino:nick') || '';
     // Jei yra išsaugota sesija – serveris ją atkurs prisijungimo metu.

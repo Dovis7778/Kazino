@@ -13,6 +13,7 @@ const { rollDice, spinSlot, slotRtp, SL_SYMS, SL_PAY3, SL_TWO_CHERRY } = require
 const { LT, LT_SEQ, LT_TOPM, LT_COIN, LT_PL, LT_HUNT, LT_BIG, LT_ROWS, rtp, bonusEv } = require('./src/wheel');
 const { WHEEL_ORDER, RED } = require('./src/roulette');
 const { TOPUP_MAX, START_BALANCE, isCents } = require('./src/money');
+const skinsMod = require('./src/skins');
 
 const PORT = Number(process.env.PORT) || 3000;
 const SESSION_DAYS = 30;
@@ -42,6 +43,7 @@ async function createServer(opts = {}) {
     }
   });
   await casino.init();
+  const skins = skinsMod.createApi(casino);
 
   app.get('/health', (_req, res) => res.json({ ok: true, online: casino.onlineCount(), db: db.kind }));
   app.get('/config.json', (_req, res) =>
@@ -52,6 +54,7 @@ async function createServer(opts = {}) {
       wheel: { LT: LT.map((x) => ({ ...x, rtp: rtp(x.key), ev: x.key[0] === 'n' ? null : bonusEv(x.key) })), LT_SEQ, LT_TOPM, LT_COIN, LT_PL, LT_HUNT, LT_BIG, LT_ROWS },
       roulette: { order: WHEEL_ORDER, red: [...RED] },
       slot: { syms: SL_SYMS, pay3: SL_PAY3, twoCherry: SL_TWO_CHERRY, rtp: slotRtp() },
+      skins: skinsMod.publicConfig(),
     })
   );
 
@@ -363,6 +366,48 @@ async function createServer(opts = {}) {
       if (!u) return;
       const r = spinSlot(casino, u.name, d || {});
       r.error ? fail(cb, r.error) : await okAfterDb(cb, r);
+    });
+
+    const skinOp = async (u, cb, run) => {
+      await skins.ensureItems(u);
+      const r = run();
+      if (r.error) return fail(cb, r.error);
+      const done = await r.done;
+      if (!done.ok) return fail(cb, done.error || 'Nepavyko');
+      ok(cb, done);
+    };
+
+    on('skins:get', async (_d, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      await skins.ensureItems(u);
+      ok(cb, { items: skins.dump(u), history: await skins.history(u) });
+    });
+
+    on('case:open', async (id, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      if (typeof id !== 'string') return fail(cb, 'Nežinoma dėžė');
+      await skinOp(u, cb, () => skins.openCase(u, id));
+    });
+
+    on('shop:buy', async (id, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      if (typeof id !== 'string') return fail(cb, 'Nežinomas skinas');
+      await skinOp(u, cb, () => skins.buy(u, id));
+    });
+
+    on('skin:sell', async (ids, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      await skinOp(u, cb, () => skins.sell(u, ids));
+    });
+
+    on('upgrade:roll', async (body, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      await skinOp(u, cb, () => skins.upgrade(u, body));
     });
 
     socket.on('disconnect', () => {

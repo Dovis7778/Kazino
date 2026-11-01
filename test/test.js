@@ -15,6 +15,7 @@ const { wins, mult } = require('../src/roulette');
 const { handValue } = require('../src/blackjack');
 const W = require('../src/wheel');
 const solo = require('../src/solo');
+const skins = require('../src/skins');
 
 const PG = process.env.DATABASE_URL || '';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'kazino-test-'));
@@ -99,9 +100,44 @@ async function openDb() {
 
 async function main() {
   const t0 = Date.now();
+
+  // Tikimybių matematika (be serverio).
+  const V = skins.byId('ak-gintaras').value;
+  ok(skins.chanceBp(skins.minInputFor(V) - 1, V) === null, 'žemiau 1 % atmetama');
+  ok(skins.chanceBp(skins.minInputFor(V), V) >= skins.MIN_BP, 'mažiausia leistina įnašo riba');
+  ok(skins.chanceBp(V, V) === skins.MAX_BP, '80 % lubos, kai įnašas = tikslas');
+  ok(skins.chanceBp(0, V) === null && skins.chanceBp(10, 0) === null, 'tuščias įnašas');
+  ok(skins.sellPayout(350) === 315 && skins.sellPayout(1) === 0, 'pardavimas 90 %, žemyn');
+  ok(skins.upgradeWins(0, 100, 'under') && skins.upgradeWins(99, 100, 'under') && !skins.upgradeWins(100, 100, 'under'), 'žemiau: [0, tikimybė)');
+  ok(skins.upgradeWins(9900, 100, 'over') && !skins.upgradeWins(9899, 100, 'over'), 'virš: [10000−tikimybė, 10000)');
+  for (const c of skins.CASES) {
+    const weight = c.drops.reduce((s, d) => s + d.w, 0);
+    const ev = c.drops.reduce((s, d) => s + d.w * skins.byId(d.id).value, 0) / weight;
+    ok(Math.abs(c.drops.reduce((s, d) => s + d.p, 0) - 1) < 1e-9, c.id + ' tikimybių suma');
+    ok(c.price === Math.max(1, Math.round(ev / 0.9)), c.id + ' kaina iš 90 % RTP');
+    ok(c.rtp > 0.88 && c.rtp < 0.92, c.id + ' RTP ' + c.rtp.toFixed(4));
+    ok(c.drops.every((d) => skins.byId(d.id)), c.id + ' skinai egzistuoja');
+  }
+
+  // Sena DB be naujų lentelių: vartotojas ir balansas išlieka.
+  {
+    const file = path.join(TMP, 'old.db');
+    const { DatabaseSync } = require('node:sqlite');
+    const s = new DatabaseSync(file);
+    s.exec("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, nick TEXT NOT NULL, nick_lc TEXT NOT NULL UNIQUE, pass_hash TEXT NOT NULL, avatar TEXT NOT NULL DEFAULT '🙂', balance INTEGER NOT NULL, games_played INTEGER NOT NULL DEFAULT 0, biggest_win INTEGER NOT NULL DEFAULT 0, total_wagered INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL); INSERT INTO users (nick, nick_lc, pass_hash, avatar, balance, created_at, last_seen) VALUES ('Senas', 'senas', 'x', '🙂', 123456, 1, 1);");
+    s.close();
+    const d0 = await Db.open({ url: '', file });
+    const old = await d0.get('SELECT balance FROM users WHERE nick_lc = ?', ['senas']);
+    ok(old && old.balance === 123456, 'migracija išsaugo seną balansą');
+    const tables = await d0.all("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('inventory', 'skin_events')");
+    ok(tables.length === 2, 'inventory ir skin_events sukuriamos šalia senų lentelių');
+    await d0.close();
+  }
   if (PG) {
     const d = await openDb();
-    await d.tx([['DROP TABLE IF EXISTS open_bets'], ['DROP TABLE IF EXISTS sessions'], ['DROP TABLE IF EXISTS users']]);
+    for (const sql of ['DROP TABLE IF EXISTS skin_events', 'DROP TABLE IF EXISTS inventory', 'DROP TABLE IF EXISTS open_bets', 'DROP TABLE IF EXISTS sessions', 'DROP TABLE IF EXISTS users']) {
+      await d.tx([[sql]]);
+    }
     await d.close();
   }
   await startServer();
@@ -374,6 +410,92 @@ async function main() {
   ok((await db.get('SELECT balance FROM users WHERE nick = ?', ['Svecias0'])).balance === 1000000, 'admin atstatymas DB');
   await db.close();
 
+  // ---------- dėžės, parduotuvė, pardavimas, upgraderis ----------
+  let odaSnap = null;
+  {
+    const oda = await register('Oda');
+    ok(oda.st.me.balance === 1000000, 'Oda pradinis balansas');
+    const guest = await client();
+    ok(!(await guest.emit('case:open', 'smelis')).ok, 'neprisijungęs negali atidaryti dėžės');
+    guest.close();
+    ok(!(await oda.emit('case:open', 'nėra')).ok, 'nežinoma dėžė');
+    ok(!(await oda.emit('shop:buy', 'lk-amzinybe')).ok, 'per brangus skinas neatimamas');
+    ok(!(await oda.emit('upgrade:roll', { items: [], cash: 1, target: 'lk-amzinybe', side: 'under' })).ok, 'per maža upgraderio tikimybė');
+    await oda.wait((s) => s.me.balance === 1000000);
+
+    const kase = skins.CASES.find((c) => c.id === 'smelis');
+    const opened = await oda.emit('case:open', 'smelis');
+    ok(opened.ok && opened.balance === 1000000 - kase.price, 'dėžės kaina nurašyta');
+    ok(kase.drops.some((d) => d.id === opened.skinId) && opened.item && opened.item.skinId === opened.skinId, 'iškritęs skinas yra dėžės lentelėje');
+    ok(opened.items.length === 1, 'po dėžės vienas daiktas');
+    await oda.wait((s) => (s.skinFeed || []).some((e) => e.kind === 'case' && e.nick === 'Oda' && e.payload.skinId === opened.skinId));
+    ok(true, 'bendroje juostoje matyti dėžės iškritimas');
+
+    const bought = await oda.emit('shop:buy', 'sr-smelis');
+    ok(bought.ok && bought.balance === opened.balance - 350 && bought.item.skinId === 'sr-smelis', 'parduotuvė nurašo katalogo kainą');
+    const sold = await oda.emit('skin:sell', bought.item.id);
+    ok(sold.ok && sold.payout === skins.sellPayout(350) && sold.balance === bought.balance + skins.sellPayout(350), 'pardavimas grąžina 90 %');
+    ok(!(await oda.emit('skin:sell', bought.item.id)).ok, 'antras pardavimas to paties daikto atmetamas');
+    ok(sold.items.length === 1 && sold.items[0].skinId === opened.skinId, 'pardavus lieka tik dėžės skinas');
+
+    const dupBuy = await oda.emit('shop:buy', 'vx-dulkes');
+    const dupId = dupBuy.item.id;
+    const [a, b] = await Promise.all([
+      oda.emit('upgrade:roll', { items: [dupId], cash: 0, target: 'ak-samanos', side: 'under' }),
+      oda.emit('upgrade:roll', { items: [dupId], cash: 0, target: 'ak-samanos', side: 'over' }),
+    ]);
+    const dupOk = [a, b].filter((x) => x.ok);
+    ok(dupOk.length === 1 && [a, b].some((x) => !x.ok), 'tas pats daiktas sunaudojamas tik vieną kartą');
+    const winTry = dupOk[0];
+    ok(winTry.chanceBp === skins.chanceBp(200, 800) && winTry.won === skins.upgradeWins(winTry.roll, winTry.chanceBp, winTry.side), 'dvigubas bandymas: tikimybė ir metimas sutampa');
+    ok(!winTry.items.some((i) => i.id === dupId), 'panaudoto daikto nebėra');
+
+    const cash = Math.ceil((5000 * V) / skins.KEEP_BP);
+    const expectBp = skins.chanceBp(cash, V);
+    ok(expectBp >= 4900 && expectBp <= 5100, 'testinė tikimybė apie 50 %');
+    let bal = winTry.balance;
+    let items = winTry.items;
+    let sawWin = false;
+    let sawLose = false;
+    for (let i = 0; i < 24 && (!sawWin || !sawLose); i++) {
+      const side = i % 2 === 0 ? 'under' : 'over';
+      const r = await oda.emit('upgrade:roll', { items: [], cash, target: 'ak-gintaras', side });
+      ok(r.ok, 'upgraderio metimas ' + i);
+      ok(r.chanceBp === expectBp && r.side === side, 'serverio tikimybė = formulė');
+      ok(r.won === skins.upgradeWins(r.roll, r.chanceBp, side), 'laimėjimas atitinka metimą ir pusę');
+      ok(r.balance === bal - cash, 'balansas sumažėja įnašu');
+      if (r.won) {
+        sawWin = true;
+        ok(r.item && r.item.skinId === 'ak-gintaras' && r.items.length === items.length + 1, 'laimėjus gaunamas tikslas');
+      } else {
+        sawLose = true;
+        ok(!r.item && r.items.length === items.length, 'pralaimėjus inventorius neauga');
+      }
+      bal = r.balance;
+      items = r.items;
+    }
+    ok(sawWin && sawLose, 'matyti ir laimėjimas, ir pralaimėjimas');
+
+    const capped = await oda.emit('upgrade:roll', { items: [], cash: V, target: 'ak-gintaras', side: 'under' });
+    ok(capped.ok && capped.capped && capped.chanceBp === skins.MAX_BP && capped.balance === bal - V, 'virš 80 % tikimybė nukerpama');
+    bal = capped.balance;
+    items = capped.items;
+
+    const keep = await oda.emit('shop:buy', 'ps-juosta');
+    ok(keep.ok && keep.balance === bal - 500, 'prieš perkrovimą nupirktas skinas');
+    bal = keep.balance;
+    const got = await oda.emit('skins:get', {});
+    ok(got.ok && got.history.some((h) => h.kind === 'case') && got.history.some((h) => h.kind === 'upgrade') && got.history.some((h) => h.kind === 'sell'), 'asmeninė istorija');
+    const dbNow = await openDb();
+    const row = await dbNow.get('SELECT balance, games_played FROM users WHERE nick = ?', ['Oda']);
+    const dbItems = await dbNow.all('SELECT i.id, i.skin_id FROM inventory i JOIN users u ON u.id = i.user_id WHERE u.nick = ? ORDER BY i.id', ['Oda']);
+    ok(row.balance === bal && row.games_played === 0, 'DB balansas sutampa, žaidimų skaitiklis nejudinamas');
+    ok(dbItems.length === got.items.length && dbItems.every((d, i) => got.items.slice().sort((a, b) => a.id - b.id)[i].id === d.id), 'DB inventorius = atmintis');
+    await dbNow.close();
+    odaSnap = { balance: bal, items: got.items.map((i) => i.id + ':' + i.skinId).sort(), token: oda.token };
+    console.log('Upgraderis OK');
+  }
+
   // ---------- serverio nukritimas su atvirais raundais ----------
   const pre = { A: A2.bal(), B: B3.bal(), C: C2.bal() };
   ok((await B3.emit('bet', { game: 'rl', key: 'black', amount: 5000 })).ok, 'atviras ruletės statymas');
@@ -410,6 +532,10 @@ async function main() {
   ok((await db.get("SELECT balance FROM users WHERE nick = 'Dovis'")).balance === pre.A, 'Dovis gavo grąžinimą');
   ok((await db.get("SELECT balance FROM users WHERE nick = 'Tomas2'")).balance === pre.B, 'Tomas2 gavo grąžinimą');
   ok((await db.get("SELECT balance FROM users WHERE nick = 'Ieva_7'")).balance === cExpect, 'Ieva_7 bj statymas grąžintas');
+  const odaRow = await db.get("SELECT balance FROM users WHERE nick = 'Oda'");
+  const odaItems = await db.all("SELECT i.id || ':' || i.skin_id AS k FROM inventory i JOIN users u ON u.id = i.user_id WHERE u.nick = 'Oda'");
+  ok(odaSnap && odaRow.balance === odaSnap.balance, 'po perkrovimo Odos balansas nepakitęs');
+  ok(odaItems.map((r) => r.k).sort().join('|') === odaSnap.items.join('|'), 'po perkrovimo inventorius išliko');
   await db.close();
   // sesija galioja po perkrovimo, balansas ir avataras išsaugoti
   const A3 = await client(A2.token);
@@ -427,6 +553,17 @@ async function main() {
   ok(lg.ok, 'prisijungimas slaptažodžiu po perkrovimo');
   await A4.wait((s) => !!s.me);
   ok(A4.st.me.balance === pre.A, 'balansas tas pats');
+
+  const oda2 = await client(odaSnap.token);
+  await oda2.wait((s) => !!s.me);
+  ok(oda2.st.me.balance === odaSnap.balance, 'Odos sesija ir balansas po perkrovimo');
+  const again = await oda2.emit('skins:get', {});
+  ok(again.ok && again.items.map((i) => i.id + ':' + i.skinId).sort().join('|') === odaSnap.items.join('|'), 'inventorius po prisijungimo');
+  const keepItem = again.items.find((i) => i.skinId === 'ps-juosta');
+  ok(!!keepItem, 'nupirktas skinas išliko');
+  const sold2 = await oda2.emit('skin:sell', keepItem.id);
+  ok(sold2.ok && sold2.payout === skins.sellPayout(500) && sold2.balance === odaSnap.balance + skins.sellPayout(500), 'po perkrovimo pardavimas 90 %');
+  ok(!sold2.items.some((i) => i.id === keepItem.id), 'parduotas daiktas dingsta');
 
   // ---------- grakštus sustabdymas ----------
   await killServer('SIGTERM');

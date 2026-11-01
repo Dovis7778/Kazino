@@ -1,6 +1,6 @@
 {
   "name": "kazino-multiplayer",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Kelių žaidėjų kazino su žaidimo pinigais (ne tikrais)",
   "main": "server.js",
   "private": true,
