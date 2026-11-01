@@ -166,6 +166,7 @@ function nickOk(n) {
 }
 function showAuth(msg, canResume) {
   me.in = false;
+  document.body.classList.remove('in-app');
   $('app').classList.add('hidden');
   $('join').classList.remove('hidden');
   $('authWait').classList.add('hidden');
@@ -204,6 +205,7 @@ function enterApp(user, resumed) {
   hideNet();
   $('join').classList.add('hidden');
   $('app').classList.remove('hidden');
+  applyChrome('lobby');
   $('meNick').textContent = user.name;
   $('meAvatar').textContent = user.avatar;
   $('meName').textContent = 'Tu: ' + user.name;
@@ -384,11 +386,17 @@ $('resetBal').onclick = async () => {
 };
 
 /* ---------- skirtukai ---------- */
+function applyChrome(view) {
+  document.body.classList.add('in-app');
+  ['lobby', 'kazino', 'up', 'profile'].forEach((v) => document.body.classList.toggle('view-' + v, v === view));
+  qsa('#bottomNav [data-bnav]').forEach((b) => b.classList.toggle('on', b.dataset.bnav === view));
+  if (view !== 'profile' && $('profPanel')) $('profPanel').classList.add('hidden');
+}
 function setGameTab(name) {
   tab = name;
   qsa('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
   qsa('.game').forEach((g) => g.classList.toggle('hidden', g.id !== 'g-' + name));
-  qsa('#bottomNav [data-bnav]').forEach((b) => b.classList.toggle('on', (name === 'home' && b.dataset.bnav === 'home') || (name !== 'home' && b.dataset.bnav === 'games' && section === 'casino')));
+  if (section === 'casino') applyChrome(name === 'home' ? 'lobby' : 'kazino');
 }
 qsa('.tab').forEach((t) => {
   t.onclick = () => setGameTab(t.dataset.tab);
@@ -685,6 +693,15 @@ function renderRL() {
     const step = 360 / 37;
     rlRot = rlRot + 360 * 5 + mod(-i * step - rlRot, 360);
     $('rlWheel').style.transform = 'rotate(' + rlRot + 'deg)';
+    const ball = $('rlBall');
+    if (ball) {
+      ball.style.transition = 'none';
+      ball.style.transform = 'rotate(0deg) translateY(-86px)';
+      requestAnimationFrame(() => {
+        ball.style.transition = 'transform 4.4s cubic-bezier(.15,.75,.05,1)';
+        ball.style.transform = 'rotate(' + (rlRot + 140) + 'deg) translateY(-70px)';
+      });
+    }
     $('rlNum').textContent = '…';
     $('rlNum').style.color = '';
   }
@@ -1140,7 +1157,10 @@ function setSection(name) {
   $('sec-up').classList.toggle('hidden', name !== 'up');
   $('gameNav').classList.toggle('hidden', name !== 'casino');
   $('upNav').classList.toggle('hidden', name !== 'up');
-  if (name === 'up') refreshUp();
+  if (name === 'up') {
+    applyChrome('up');
+    refreshUp();
+  } else applyChrome(tab === 'home' ? 'lobby' : 'kazino');
 }
 qsa('[data-section]').forEach((b) => (b.onclick = () => setSection(b.dataset.section)));
 function setUp(name) {
@@ -1636,11 +1656,7 @@ function buzz(ms) {
   } catch (e) {}
 }
 function paintSound() {
-  const on = audioOn ? 'Garsas įj.' : 'Garsas išj.';
-  if ($('soundBtn')) {
-    $('soundBtn').textContent = on;
-    $('soundBtn').setAttribute('aria-pressed', audioOn ? 'true' : 'false');
-  }
+  if ($('soundBtn')) $('soundBtn').setAttribute('aria-pressed', audioOn ? 'true' : 'false');
   if ($('ugSound')) $('ugSound').textContent = audioOn ? 'Garsas įjungtas' : 'Garsas išjungtas';
 }
 function celebrate() {
@@ -1780,24 +1796,23 @@ function wireShell() {
       buzz(10);
       const k = b.dataset.bnav;
       if (k === 'up') setSection('up');
-      else if (k === 'chat') {
-        setSection('casino');
-        const box = document.querySelector('.chatbox');
-        if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } else if (k === 'profile') {
-        $('profPanel').classList.remove('hidden');
+      else if (k === 'profile') {
+        section = 'casino';
+        $('sec-up').classList.add('hidden');
+        $('sec-casino').classList.remove('hidden');
         $('topPanel').classList.add('hidden');
+        $('profPanel').classList.remove('hidden');
+        applyChrome('profile');
         renderProfile();
-        $('profPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else if (k === 'games') {
+        window.scrollTo(0, 0);
+      } else if (k === 'kazino') {
         setSection('casino');
-        if (tab === 'home') setGameTab('bj');
-        else setGameTab(tab);
+        setGameTab(tab === 'home' ? 'bj' : tab);
       } else {
         setSection('casino');
         setGameTab('home');
+        window.scrollTo(0, 0);
       }
-      qsa('#bottomNav [data-bnav]').forEach((x) => x.classList.toggle('on', x === b));
     };
   }
 }

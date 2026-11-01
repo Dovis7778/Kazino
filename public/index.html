@@ -19,6 +19,17 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <svg xmlns="http://www.w3.org/2000/svg" class="sprite" aria-hidden="true">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-cards" viewBox="0 0 24 24"><rect x="7" y="3" width="12" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 7.5h-.5A1.5 1.5 0 0 0 3 9v10a2 2 0 0 0 2 2h10" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2.5 14 9l6.5 2L14 13l-2 6.5L10 13 3.5 11 10 9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 19.5c1.4-3 3.8-4.5 7-4.5s5.6 1.5 7 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-vol" viewBox="0 0 24 24"><path d="M4 10h3.5L12 6.5v11L7.5 14H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M16 9.5a4 4 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-wheel" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-dice" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="9" r="1.2" fill="currentColor"/><circle cx="15" cy="15" r="1.2" fill="currentColor"/><circle cx="15" cy="9" r="1.2" fill="currentColor"/></symbol>
+    <symbol id="i-cherry" viewBox="0 0 24 24"><path d="M12 5c2 3 3 5 3 7a3 3 0 1 1-6 0c0-2 1-4 3-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 5c2-2 5-2 7 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  </svg>
   <div id="boot" class="boot" role="status">
     <div class="boot-card">
       <div class="boot-logo">Kazino</div>
@@ -30,7 +41,7 @@
   <!-- Prisijungimo / registracijos ekranas -->
   <section id="join" class="join">
     <div class="join-card">
-      <div class="logo">🎰 Kazino su draugais</div>
+      <div class="logo">Kazino</div>
       <p class="notice">Žaidimo pinigai, ne tikri. Čia nėra jokių mokėjimų – tik pramoga su draugais.</p>
       <div id="authWait" class="small hidden">Jungiamasi…</div>
       <div id="authForm">
@@ -57,17 +68,17 @@
   <!-- Pagrindinis ekranas -->
   <section id="app" class="app hidden">
     <header class="topbar">
-      <div class="brand">🎰 <span>Kazino</span></div>
+      <div class="brand"><span>Kazino</span> <span id="conn" class="conn on">prisijungta</span></div>
       <div class="bal" title="Žaidimo pinigai"><span class="bal-l">Balansas</span><b id="myBal">0,00 €</b></div>
-      <button id="profBtn" class="code-chip" type="button" title="Profilis"><span id="meAvatar">🙂</span> <b id="meNick"></b></button>
-      <button id="soundBtn" class="btn small" type="button" aria-pressed="false" title="Garsai">Garsas išj.</button>
-      <button id="topBtn" class="btn small" type="button">Papildyti</button>
-      <nav class="sections" role="tablist" aria-label="Skyrius">
+      <button id="soundBtn" class="iconbtn" type="button" aria-pressed="false" aria-label="Garsas"><svg class="ico"><use href="#i-vol"/></svg></button>
+      <button id="topBtn" class="iconbtn" type="button" aria-label="Papildyti balansą"><svg class="ico"><use href="#i-plus"/></svg></button>
+      <button id="profBtn" class="iconbtn desktop-only" type="button" title="Profilis"><span id="meAvatar">🙂</span> <b id="meNick" class="desktop-only"></b></button>
+      <nav class="sections desktop-only" role="tablist" aria-label="Skyrius">
         <button class="secbtn active" data-section="casino" type="button">Kazino</button>
         <button class="secbtn" data-section="up" type="button">Upgrader</button>
       </nav>
     </header>
-    <div class="notice-bar">Žaidimo pinigai, ne tikri · <span id="meName"></span> <span id="conn" class="conn on">● prisijungta</span></div>
+    <div class="notice-bar">Žaidimo pinigai, ne tikri <span id="meName" class="desktop-only"></span></div>
     <div id="netBanner" class="netbanner hidden" role="status"><b id="netTitle">Ryšys</b> <span id="netText"></span> <span id="healthNote"></span></div>
 
     <div id="profPanel" class="panel hidden">
@@ -105,12 +116,12 @@
 
     <div class="layout">
       <nav class="tabs sidenav" id="gameNav" role="tablist" aria-label="Žaidimai">
-        <button class="tab active" data-tab="home" type="button">🏠 Salė</button>
-        <button class="tab" data-tab="bj" type="button">🃏 Blackjack</button>
-        <button class="tab" data-tab="rl" type="button">🎯 Ruletė</button>
-        <button class="tab" data-tab="lt" type="button">🎡 Laimės ratas</button>
-        <button class="tab" data-tab="dc" type="button">🎲 Kauliukai</button>
-        <button class="tab" data-tab="sl" type="button">🍒 Automatas</button>
+        <button class="tab active" data-tab="home" type="button">Salė</button>
+        <button class="tab" data-tab="bj" type="button">Blackjack</button>
+        <button class="tab" data-tab="rl" type="button">Ruletė</button>
+        <button class="tab" data-tab="lt" type="button">Ratas</button>
+        <button class="tab" data-tab="dc" type="button">Kauliukai</button>
+        <button class="tab" data-tab="sl" type="button">Automatas</button>
       </nav>
       <nav class="tabs sidenav uptabs hidden" id="upNav" role="tablist" aria-label="Upgrader">
         <button class="uptab active" data-up="upgrade" type="button">Upgrader</button>
@@ -121,12 +132,12 @@
         <div id="sec-casino">
         <div class="game" id="g-home">
           <div class="lobby" id="lobby">
-            <button class="lobby-card" type="button" data-goto="bj"><span class="lobby-ico">🃏</span><b>Blackjack</b><span>Bendri stalai, iki 7 žaidėjų</span></button>
-            <button class="lobby-card" type="button" data-goto="rl"><span class="lobby-ico">🎯</span><b>Ruletė</b><span>Viena bendra, europietiška</span></button>
-            <button class="lobby-card" type="button" data-goto="lt"><span class="lobby-ico">🎡</span><b>Laimės ratas</b><span>Bendras ratas ir premijos</span></button>
-            <button class="lobby-card" type="button" data-goto="dc"><span class="lobby-ico">🎲</span><b>Kauliukai</b><span>Individualiai, 99 % grąža</span></button>
-            <button class="lobby-card" type="button" data-goto="sl"><span class="lobby-ico">🍒</span><b>Automatas</b><span>Trys būgnai, tavo sukimas</span></button>
-            <button class="lobby-card up" type="button" data-goto-sec="up"><span class="lobby-ico">✨</span><b>Upgrader</b><span>Dėžės, skinai, ratas</span></button>
+            <button class="lobby-card" type="button" data-goto="bj"><span class="lobby-ico"><svg class="ico"><use href="#i-cards"/></svg></span><b>Blackjack</b><span>Bendri stalai, iki 7 žaidėjų</span></button>
+            <button class="lobby-card" type="button" data-goto="rl"><span class="lobby-ico"><svg class="ico"><use href="#i-wheel"/></svg></span><b>Ruletė</b><span>Viena bendra, europietiška</span></button>
+            <button class="lobby-card" type="button" data-goto="lt"><span class="lobby-ico"><svg class="ico"><use href="#i-spark"/></svg></span><b>Laimės ratas</b><span>Bendras ratas ir premijos</span></button>
+            <button class="lobby-card" type="button" data-goto="dc"><span class="lobby-ico"><svg class="ico"><use href="#i-dice"/></svg></span><b>Kauliukai</b><span>Individualiai, 99 % grąža</span></button>
+            <button class="lobby-card" type="button" data-goto="sl"><span class="lobby-ico"><svg class="ico"><use href="#i-cherry"/></svg></span><b>Automatas</b><span>Trys būgnai, tavo sukimas</span></button>
+            <button class="lobby-card up" type="button" data-goto-sec="up"><span class="lobby-ico"><svg class="ico"><use href="#i-spark"/></svg></span><b>Upgrader</b><span>Dėžės, skinai, ratas</span></button>
           </div>
         </div>
         <!-- BLACKJACK -->
@@ -172,7 +183,7 @@
           <div class="felt rl-felt">
             <div class="status"><span id="rlStatus">Statymai</span><span class="timer" id="rlTimer"></span></div>
             <div class="rl-top">
-              <div class="rl-wheel-wrap"><div class="pointer"></div><svg id="rlWheel" viewBox="-110 -110 220 220"></svg></div>
+              <div class="rl-wheel-wrap"><div class="pointer"></div><svg id="rlWheel" viewBox="-110 -110 220 220"></svg><div id="rlBall" class="rl-ball"></div></div>
               <div class="rl-result"><div id="rlNum" class="bignum">–</div><div id="rlMsg" class="msg"></div></div>
             </div>
             <div id="rlBoard" class="rl-board"></div>
@@ -275,15 +286,15 @@
 
       <aside class="side">
         <div class="box" id="feedBox">
-          <div class="box-h">✨ Skinų juosta</div>
+          <div class="box-h">Skinų juosta</div>
           <div id="feed" class="feed"><div class="small">Dar nėra dėžių ar upgraderio.</div></div>
         </div>
         <div class="box">
-          <div class="box-h">🟢 Dabar žaidžia <span id="onlineCount" class="small"></span></div>
+          <div class="box-h">Dabar žaidžia <span id="onlineCount" class="small"></span></div>
           <ol id="players" class="players"></ol>
         </div>
         <div class="box">
-          <div class="box-h">🏆 Lyderiai</div>
+          <div class="box-h">Lyderiai</div>
           <div class="seg leadseg" id="leadSeg">
             <button class="segb active" type="button" data-lead="bal">Balansas</button>
             <button class="segb" type="button" data-lead="win">Laimėjimas</button>
@@ -292,7 +303,7 @@
           <ol id="leaders" class="players"></ol>
         </div>
         <div class="box chatbox">
-          <div class="box-h">💬 Bendras pokalbis</div>
+          <div class="box-h">Pokalbis</div>
           <div id="chat" class="chat"></div>
           <div id="emojiBar" class="emojis"></div>
           <div class="row"><input id="chatIn" maxlength="300" placeholder="Rašyk žinutę…" /><button id="chatSend" class="btn small" type="button">Siųsti</button></div>
@@ -302,11 +313,10 @@
   </section>
 
   <nav class="bottomnav" id="bottomNav" aria-label="Apačia">
-    <button type="button" data-bnav="home">Salė</button>
-    <button type="button" data-bnav="games">Žaidimai</button>
-    <button type="button" data-bnav="up">Upgrader</button>
-    <button type="button" data-bnav="chat">Pokalbiai</button>
-    <button type="button" data-bnav="profile">Profilis</button>
+    <button type="button" data-bnav="lobby"><svg class="ico"><use href="#i-home"/></svg><span>Lobby</span></button>
+    <button type="button" data-bnav="kazino"><svg class="ico"><use href="#i-cards"/></svg><span>Kazino</span></button>
+    <button type="button" data-bnav="up"><svg class="ico"><use href="#i-spark"/></svg><span>Upgrader</span></button>
+    <button type="button" data-bnav="profile"><svg class="ico"><use href="#i-user"/></svg><span>Profilis</span></button>
   </nav>
   <canvas id="fx" class="fx" aria-hidden="true"></canvas>
   <div id="toast" class="toast hidden" role="status"></div>

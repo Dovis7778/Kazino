@@ -1,18 +1,28 @@
 /* Kazino stilius – tamsus, auksinis. Spalvas lengva keisti čia: */
 :root {
-  --bg: #0b0709;
-  --panel: #171014;
-  --line: rgba(255, 216, 77, 0.3);
-  --gold: #ffd84d;
-  --text: #f4ecd2;
-  --muted: #b8ad92;
-  --red: #c8102e;
+  --bg: #0c090b;
+  --bg-2: #171114;
+  --panel: #1b1418;
+  --line: rgba(244, 220, 170, 0.22);
+  --gold: #f0c14b;
+  --gold-2: #c9922a;
+  --text: #f6f0e4;
+  --muted: #c4b7a2;
+  --red: #d23b4a;
   --green: #1f8a55;
   --radius: 16px;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --radius-sm: 12px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.28);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: radial-gradient(ellipse at 50% -10%, #2a1420 0%, var(--bg) 60%) fixed; color: var(--text); min-height: 100%; }
+html, body { margin: 0; max-width: 100%; overflow-x: hidden; background: radial-gradient(ellipse at 50% -10%, #2a1420 0%, var(--bg) 60%) fixed; color: var(--text); min-height: 100%; }
 body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
 .hidden { display: none !important; }
 button { font: inherit; }
@@ -467,9 +477,9 @@ body {
 input[type="range"] { height: 28px; padding: 0; background: transparent; accent-color: #ffd84d; }
 .gauge { position: relative; width: min(440px, 100%); margin: 0 auto; }
 .gauge svg { width: 100%; height: auto; display: block; }
-.gauge-read { position: absolute; left: 0; right: 0; top: 42%; text-align: center; pointer-events: none; }
-.gauge-read b { display: block; font-size: clamp(32px, 10vw, 48px); line-height: 1; font-weight: 900; color: #fff; font-variant-numeric: tabular-nums; }
-.gauge-read span { display: block; margin-top: 4px; color: #ffd84d; font-weight: 800; font-size: 14px; }
+.gauge-read { position: absolute; left: 0; right: 0; top: 62%; text-align: center; pointer-events: none; }
+.gauge-read b { display: inline-block; font-size: clamp(28px, 8vw, 40px); line-height: 1; font-weight: 900; color: #fff; font-variant-numeric: tabular-nums; background: rgba(12,9,11,.78); border-radius: 10px; padding: 2px 8px; }
+.gauge-read span { display: inline-block; margin-top: 4px; color: #ffd84d; font-weight: 800; font-size: 13px; background: rgba(12,9,11,.78); border-radius: 8px; padding: 1px 8px; }
 .ug-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .ug-slot { min-height: 138px; border-radius: 16px; border: 1px solid rgba(255,216,77,.35); background: rgba(255,255,255,.04); color: inherit; padding: 8px; cursor: pointer; }
 .ug-slot-h { display: block; font-size: 12px; line-height: 1.25; color: var(--muted); min-height: 32px; }
@@ -491,3 +501,52 @@ input[type="range"] { height: 28px; padding: 0; background: transparent; accent-
 .ug-tools { display: flex; flex-direction: column; gap: 8px; }
 .skin-card { overflow: hidden; }
 .rstrip { position: absolute; left: 0; right: 0; top: 0; height: 5px; border-radius: 16px 16px 0 0; }
+
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.ico { width: 22px; height: 22px; display: block; }
+.iconbtn { width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.04); color: var(--text); display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.iconbtn[aria-pressed="true"] { color: var(--gold); border-color: var(--gold); }
+.conn { font-size: 0; width: 8px; height: 8px; border-radius: 50%; background: #5fd38d; display: inline-block; margin-left: 8px; }
+.conn.off { background: #ff7d8d; }
+.desktop-only { display: none; }
+@media (min-width: 980px) { .desktop-only { display: initial; } .sections.desktop-only { display: grid; } #profBtn.desktop-only { display: inline-flex; } }
+.bottomnav { display: none; }
+body.in-app .bottomnav { display: grid; grid-template-columns: repeat(4, 1fr); }
+.bottomnav button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--muted); font-size: 11px; font-weight: 700; min-height: 52px; }
+.bottomnav button.on { color: #2b1d00; background: var(--gold); }
+.bottomnav .ico { width: 20px; height: 20px; }
+body.in-app .toast { bottom: calc(78px + env(safe-area-inset-bottom)); }
+@media (max-width: 979px) {
+  .sections { display: none !important; }
+  .side { display: none; }
+  body.view-profile .side { display: flex; }
+  body.view-profile .games { display: none; }
+  body.view-lobby #gameNav, body.view-up #gameNav, body.view-profile #gameNav { display: none; }
+  body.view-kazino #upNav, body.view-lobby #upNav, body.view-profile #upNav { display: none; }
+  body.view-kazino #gameNav, body.view-up #upNav { display: flex; }
+  .topbar { gap: 8px; padding: 8px 10px; }
+  .brand { order: 1; font-size: 18px; display: flex; align-items: center; }
+  .bal { order: 2; margin-left: auto; }
+  #soundBtn { order: 3; }
+  #topBtn { order: 4; }
+  .notice-bar { margin: 4px 2px 8px; }
+  .app { padding: 8px 8px calc(108px + env(safe-area-inset-bottom)); }
+  .ug-quick { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .lobby-card { min-height: 104px; }
+  .bj-felt { min-height: 210px; }
+  .gauge svg { max-height: 136px; }
+  .up-note { margin: 0; padding: 6px 10px; }
+  body.view-profile .side { padding-bottom: 96px; }
+  .ug-slot { min-height: 112px; }
+  body.view-kazino [data-tab="home"] { display: none; }
+  .tabs { -webkit-mask-image: linear-gradient(90deg, #000 92%, transparent); mask-image: linear-gradient(90deg, #000 92%, transparent); }
+}
+@media (min-width: 980px) { body.in-app .bottomnav { display: none; } .app { padding-bottom: 16px; } }
+.card { width: 54px; height: 78px; border-radius: 8px; background: linear-gradient(180deg, #fff 0%, #f4efe4 100%); box-shadow: 0 10px 16px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.9); align-items: flex-start; justify-content: space-between; padding: 6px; }
+.card span:last-child { align-self: flex-end; font-size: 18px; }
+.card.deal { animation: deal .42s cubic-bezier(.18,.8,.2,1); }
+.rl-wheel-wrap { border-radius: 50%; padding: 8px; background: radial-gradient(circle at 32% 28%, #7a6240, #24180f 58%, #070604); box-shadow: var(--shadow), inset 0 0 0 7px #e3c56a, inset 0 0 0 12px #3a2a14, inset 0 10px 16px rgba(255,255,255,.18); }
+#rlWheel { transition: transform 4.6s cubic-bezier(.15,.75,.05,1); }
+.rl-ball { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, #d0d0d0 45%, #666); box-shadow: 0 2px 3px rgba(0,0,0,.55); z-index: 3; transform: rotate(18deg) translateY(-78px); }
+.lt-wheel-wrap svg { transition: transform 4.2s cubic-bezier(.15,.75,.05,1); }
+.felt { box-shadow: var(--shadow), inset 0 0 50px rgba(0,0,0,.35); }
