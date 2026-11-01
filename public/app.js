@@ -1079,6 +1079,7 @@ let section = 'casino';
 let upTab = 'upgrade';
 let ugTab = 'mine';
 let mineSrc = 'inv';
+let ugFast = false;
 let INV = [];
 let HIST = [];
 let picked = new Set();
@@ -1202,16 +1203,18 @@ function buildUpgrader() {
   $('up-cases').innerHTML = '<div id="caseReel" class="reel-window hidden"></div><div id="caseMsg" class="up-result"></div><div id="caseGrid" class="case-grid"></div>';
   $('up-shop').innerHTML = '<p class="small">Kaina lygi katalogo vertei. Pardavus atgauni ' + CFG.skins.sell.num + ' % (centai apvalinami žemyn).</p><div id="shopFilters" class="filters"></div><div id="shopGrid" class="skin-grid"></div>';
   $('up-upgrade').innerHTML =
-    '<div class="gauge"><svg viewBox="0 0 320 200" aria-hidden="true"><defs><linearGradient id="ugGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#ffe27a"/><stop offset="55%" stop-color="#ff9a3c"/><stop offset="100%" stop-color="#ff3b3b"/></linearGradient></defs><path id="ugTrack" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="16"/><path id="upArc" fill="none" stroke="url(#ugGrad)" stroke-width="16"/><g id="ugTicks"></g><g id="upPointer"><polygon points="160,46 152,170 168,170" fill="#f7f1dc"/><circle cx="160" cy="170" r="9" fill="#ffd84d" stroke="#2b1d00" stroke-width="2"/></g></svg><div class="gauge-read"><b id="upChance">—</b><span id="upTier">pasirink įnašą</span></div></div>' +
-    '<div class="ug-pair"><button type="button" class="ug-slot" id="slotIn"><span class="ug-slot-h">Pasirink savo skinus (ir/arba balansą)</span><div id="slotInBody"></div></button><button type="button" class="ug-slot" id="slotOut"><span class="ug-slot-h">Pasirink norimą skiną</span><div id="slotOutBody"></div></button></div>' +
-    '<button class="btn primary wide ug-go" id="upGo" type="button">Upgrade</button><div id="upMsg" class="up-result"></div>' +
+    '<div class="ug-head"><div class="ug-side"><button type="button" class="iconbtn" id="ugFast" aria-pressed="false" aria-label="Greitas režimas"><svg class="ico" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 10-14h-7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button><button type="button" class="iconbtn" id="ugSound" aria-label="Garsas"><svg class="ico"><use href="#i-vol"/></svg></button></div><div class="ug-title"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3 14.2 9H21l-5.2 4 2 7L12 16.8 6.2 20l2-7L3 9h6.8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>UPGRADER</span></div><div class="ug-side right"><button type="button" class="iconbtn" id="ugGear" aria-label="Nustatymai"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.5v2.2M12 18.3V20.5M3.5 12h2.2M18.3 12H20.5M5.8 5.8l1.6 1.6M16.6 16.6l1.6 1.6M18.2 5.8l-1.6 1.6M7.4 16.6l-1.6 1.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button><button type="button" class="iconbtn" id="ugInfo" aria-label="Tikimybės"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v5M12 8h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div></div>' +
+    '<div class="wheelbox" id="ugWheel"><svg viewBox="0 0 320 320" aria-hidden="true"><defs><linearGradient id="ugGrad" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="#f5c518"/><stop offset="55%" stop-color="#ff8a1e"/><stop offset="100%" stop-color="#ff4b3a"/></linearGradient><filter id="ugGlow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="0" stdDeviation="2.2" flood-color="#ffe14a"/></filter></defs><circle cx="160" cy="160" r="118" fill="#1a161c" stroke="rgba(255,255,255,.08)" stroke-width="10"/><circle id="ugTrack" cx="160" cy="160" r="132" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2"/><g id="ugTicks"></g><path id="upArc" fill="none" stroke="url(#ugGrad)" stroke-width="18" stroke-linecap="butt"/><g id="upPointer" transform="rotate(180 160 160)"><polygon points="160,18 149,46 171,46" fill="#ffe14a"/></g><text x="160" y="36" text-anchor="middle" fill="#8d8578" font-size="11">100%</text><text x="36" y="164" text-anchor="middle" fill="#8d8578" font-size="11">50%</text><text x="284" y="164" text-anchor="middle" fill="#8d8578" font-size="11">50%</text></svg><div class="wheel-read"><svg class="wheel-mark" viewBox="0 0 80 80" aria-hidden="true"><path d="M40 14 62 48H18z" fill="#f5c518"/></svg><b id="upChance">—</b><span id="upTier">pasirink įnašą</span></div></div>' +
+    '<div class="ug-pair"><button type="button" class="ug-slot" id="slotIn"><span class="ug-slot-h">Pasirink savo skinus arba balansą</span><span class="ug-sub">Gali pasirinkti kelis skinus</span><div id="slotInBody"></div></button><button type="button" class="ug-slot" id="slotOut"><span class="ug-slot-h">Pasirink skiną upgrade’ui</span><div id="slotOutBody"></div></button></div>' +
+    '<button class="btn primary wide ug-go" id="upGo" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg> Upgrade</button><div id="upMsg" class="up-result"></div>' +
     '<div class="ug-bal"><div class="ug-bal-top"><span>Balanso suma</span><b id="upCashLabel">0,00 €</b></div><input id="upRange" type="range" min="0" max="0" value="0" aria-label="Balanso suma"/><div class="ug-bal-top"><span>0</span><span id="upCashMax">max 0,00 €</span></div></div>' +
-    '<div class="ug-quick" id="ugQuick"><button type="button" data-mult="2">x2</button><button type="button" data-mult="4">x4</button><button type="button" data-mult="8">x8</button><button type="button" data-chance="500">5%</button><button type="button" data-chance="5500">55%</button><button type="button" data-chance="7500">75%</button><button type="button" id="ugGear" aria-label="Nustatymai">⚙</button></div>' +
-    '<div id="ugSettings" class="ug-settings hidden"><div class="seg"><button class="segb active" id="sideUnder" type="button">Žemiau</button><button class="segb" id="sideOver" type="button">Virš</button></div><button class="btn" id="ugSound" type="button">Garsas</button><p class="small">Tikimybė = įnašas / tikslas × ' + (100 - edgeNum()) + ' %. Mažiausia 1 %, didžiausia 80 %. Virš 80 % nukerpama. Namų dalis ' + edge + '. Metimą renka serveris. Pralaimėjus įnašas prarandamas. Žaidimo pinigai, ne tikri.</p></div>' +
+    '<div class="ug-quick" id="ugQuick"><button type="button" data-mult="2">x2</button><button type="button" data-mult="4">x4</button><button type="button" data-mult="8">x8</button><button type="button" data-chance="500">5%</button><button type="button" data-chance="5500">55%</button><button type="button" data-chance="7500">75%</button></div>' +
+    '<div id="ugSettings" class="ug-settings hidden"><div class="seg"><button class="segb active" id="sideUnder" type="button">Žemiau</button><button class="segb" id="sideOver" type="button">Virš</button></div><p class="small">Lankas visada rodo laimėjimo zoną nuo apačios. „Virš“ keičia, kuri serverio metimo dalis laimi, o rodyklė vis tiek krenta zonoje tik laimėjus.</p></div>' +
+    '<div id="ugInfoBox" class="ug-settings hidden"><p class="small">Tikimybė = įnašas / tikslas × ' + (100 - edgeNum()) + ' %. Mažiausia 1 %, didžiausia 80 %. Virš 80 % nukerpama. Namų dalis ' + edge + '.</p><p class="small">Spalvotas lankas – laimėjimo zona. 50 % užpildo apatinę pusę, 100 % – visą ratą. Rodyklė sukasi pagal serverio metimą: lanko viduje laimi, už lanko pralaimi. Pralaimėjus įnašas prarandamas.</p><p class="small">Žaidimo pinigai, ne tikri.</p></div>' +
     '<div class="ug-tabs" id="ugTabs"><button type="button" class="active" data-ugtab="mine">Mano skinai</button><button type="button" data-ugtab="want">Norimi skinai</button></div>' +
     '<div id="ugMineTools" class="ug-tools"><div class="seg" id="ugSrc"><button type="button" class="segb active" data-src="inv">Mano skinai</button><button type="button" class="segb" data-src="shop">Parduotuvė</button></div><button class="btn small" id="invSell" type="button">Parduoti pažymėtus (90 %)</button></div>' +
     '<div id="ugGrid" class="skin-grid"></div>';
-  $('up-inv').innerHTML = '<div class="row wrap"><button class="btn primary" id="invSell" type="button">Parduoti pažymėtus</button><button class="btn" id="invToUp" type="button">Į Upgraderį</button></div><div id="invGrid" class="skin-grid"></div>';
+  $('up-inv').innerHTML = '';
   $('up-hist').innerHTML = '<div id="histList" class="hist-list"></div>';
   $('caseGrid').innerHTML = CFG.skins.cases
     .map((c) => {
@@ -1256,7 +1259,18 @@ function buildUpgrader() {
   };
   $('upGo').onclick = doUpgrade;
   $('invSell').onclick = () => sellIds([...picked]);
-  $('ugGear').onclick = () => $('ugSettings').classList.toggle('hidden');
+  $('ugGear').onclick = () => {
+    $('ugInfoBox').classList.add('hidden');
+    $('ugSettings').classList.toggle('hidden');
+  };
+  $('ugInfo').onclick = () => {
+    $('ugSettings').classList.add('hidden');
+    $('ugInfoBox').classList.toggle('hidden');
+  };
+  $('ugFast').onclick = () => {
+    ugFast = !ugFast;
+    $('ugFast').setAttribute('aria-pressed', ugFast ? 'true' : 'false');
+  };
   $('ugSound').onclick = () => {
     audioOn = !audioOn;
     storeSet('kazino:sound', audioOn ? '1' : '0');
@@ -1316,35 +1330,57 @@ function edgeNum() {
   const edge = CFG && CFG.skins ? CFG.skins.upgrade.edge : 0.07;
   return String(Math.round(100 - edge * 100));
 }
-const GAUGE_CX = 160;
-const GAUGE_CY = 170;
-function gaugeXY(t, r) {
-  const a = Math.PI * (1 - t);
-  return [GAUGE_CX + r * Math.cos(a), GAUGE_CY - r * Math.sin(a)];
+function ringXY(deg, r) {
+  const a = (deg * Math.PI) / 180;
+  return [160 + r * Math.sin(a), 160 - r * Math.cos(a)];
 }
-function semiPath(t0, t1, r) {
-  if (t1 - t0 <= 0.001) return '';
-  const p0 = gaugeXY(t0, r);
-  const p1 = gaugeXY(t1, r);
-  const large = t1 - t0 > 0.5 ? 1 : 0;
+function ringArc(a0, a1, r) {
+  let span = a1 - a0;
+  while (span < 0) span += 360;
+  if (span < 0.4 || span > 359.6) return '';
+  const p0 = ringXY(a0, r);
+  const p1 = ringXY(a0 + span, r);
+  const large = span > 180 ? 1 : 0;
   return 'M ' + p0[0].toFixed(2) + ' ' + p0[1].toFixed(2) + ' A ' + r + ' ' + r + ' 0 ' + large + ' 1 ' + p1[0].toFixed(2) + ' ' + p1[1].toFixed(2);
+}
+function chanceArc(p, r) {
+  if (p <= 0.001) return '';
+  if (p >= 0.999) return ringArc(180, 359.2, r) + ringArc(0, 180, r);
+  const half = p * 180;
+  return ringArc(180 - half, 180 + half, r);
+}
+// Rodyklės kampas: 0° viršuje, pagal laikrodį. Laimėjimo zona centruota apačioje (180°).
+function rollAngle(roll, bp, side) {
+  const p = Math.max(0, Math.min(1, bp / 10000));
+  const f = roll / 10000;
+  let vis = f;
+  if (side === 'over') vis = f >= 1 - p ? f - (1 - p) : p + f;
+  const half = p * 180;
+  return (180 - half + vis * 360 + 360) % 360;
+}
+let arcShown = 0;
+let arcFrame = 0;
+let resultUntil = 0;
+let resultView = null;
+function paintArc(p) {
+  const arc = $('upArc');
+  if (arc) arc.setAttribute('d', chanceArc(p, 132));
 }
 function drawGaugeStatic() {
   const ticks = $('ugTicks');
-  const track = $('ugTrack');
-  if (!ticks || !track || ticks.childNodes.length) return;
-  track.setAttribute('d', semiPath(0, 1, 128));
+  if (!ticks || ticks.childNodes.length) return;
   let html = '';
-  for (let i = 0; i <= 10; i++) {
-    const a = gaugeXY(i / 10, 116);
-    const b = gaugeXY(i / 10, 142);
-    html += '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="rgba(255,255,255,.55)" stroke-width="2"/>';
+  for (let i = 0; i < 60; i++) {
+    const major = i % 5 === 0;
+    const a = ringXY(i * 6, major ? 112 : 118);
+    const b = ringXY(i * 6, 126);
+    html += '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="rgba(255,255,255,' + (major ? '0.75' : '0.4') + ')" stroke-width="' + (major ? 2 : 1) + '"/>';
   }
   ticks.innerHTML = html;
 }
 function emptySlot(dir) {
-  const chev = dir === 'down' ? 'M5 8l7 7 7-7' : 'M5 15l7-7 7 7';
-  return '<div class="ug-ph"><div class="art">' + weaponSvg('ak', '#6a6258') + '</div><svg class="chev" viewBox="0 0 24 24" width="28" height="22" aria-hidden="true"><path d="' + chev + '" fill="none" stroke="#cbbfa6" stroke-width="2" stroke-linecap="round"/></svg></div>';
+  const d = dir === 'down' ? 'M4 7l8 6 8-6' : 'M4 13l8-6 8 6';
+  return '<div class="ug-ph"><div class="art">' + weaponSvg('ak', '#5c564e') + '</div><svg class="chevstack" viewBox="0 0 24 32" aria-hidden="true"><path d="' + d + '" fill="none" stroke="#f5c518" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="' + d + '" transform="translate(0 8)" fill="none" stroke="#f5c518" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="' + d + '" transform="translate(0 16)" fill="none" stroke="#f5c518" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
 }
 function pickedSkins() {
   const out = [];
@@ -1376,8 +1412,14 @@ function fillSlots() {
 function chanceTier(bp) {
   if (!bp) return 'pasirink įnašą';
   if (bp < 2500) return 'mažas šansas';
-  if (bp < 6000) return 'vidutinis šansas';
+  if (bp <= 6000) return 'vidutinis šansas';
   return 'didelis šansas';
+}
+function chanceColor(bp) {
+  if (!bp) return '#f6f0e4';
+  if (bp < 2500) return '#ff5a6a';
+  if (bp <= 6000) return '#f5c518';
+  return '#3ddc84';
 }
 function closestSkin(ideal, onlyAbove) {
   let best = null;
@@ -1461,9 +1503,18 @@ function refreshUp() {
   const input = selectedSkinValue() + upCash;
   const target = upTarget ? skinById(upTarget) : null;
   const ch = target ? clientChance(input, target.value) : null;
-  if ($('upChance')) $('upChance').textContent = ch ? pctBp(ch.bp) : '—';
-  if ($('upTier')) $('upTier').textContent = ch ? chanceTier(ch.bp) : 'pasirink įnašą';
-  drawDial(ch ? ch.bp : 0, upSide);
+  if ($('upChance')) {
+    if (Date.now() < resultUntil && resultView) {
+      $('upChance').textContent = resultView.text;
+      $('upChance').style.color = resultView.color;
+      if ($('upTier')) $('upTier').textContent = resultView.tier;
+    } else {
+      $('upChance').textContent = ch ? pctBp(ch.bp) : '—';
+      $('upChance').style.color = chanceColor(ch ? ch.bp : 0);
+      if ($('upTier')) $('upTier').textContent = ch ? chanceTier(ch.bp) : 'pasirink įnašą';
+    }
+  }
+  drawDial(ch ? ch.bp : 0);
   fillSlots();
   const range = $('upRange');
   if (range) {
@@ -1488,13 +1539,19 @@ function refreshUp() {
       }).join('')
     : '<p class="small">Istorija tuščia.</p>';
 }
-function drawDial(bp, side) {
-  const arc = $('upArc');
-  if (!arc) return;
-  const p = Math.max(0, Math.min(1, (bp || 0) / 10000));
-  const start = side === 'over' ? 1 - p : 0;
-  const end = side === 'over' ? 1 : p;
-  arc.setAttribute('d', p ? semiPath(start, end, 128) : '');
+function drawDial(bp) {
+  const target = Math.max(0, Math.min(1, (bp || 0) / 10000));
+  const from = arcShown;
+  const t0 = Date.now();
+  if (arcFrame) cancelAnimationFrame(arcFrame);
+  function step() {
+    const t = Math.min(1, (Date.now() - t0) / 320);
+    const e = 1 - Math.pow(1 - t, 3);
+    arcShown = from + (target - from) * e;
+    paintArc(arcShown);
+    if (t < 1) arcFrame = requestAnimationFrame(step);
+  }
+  step();
 }
 function animateCase(caseId, skinId) {
   return new Promise((resolve) => {
@@ -1531,22 +1588,37 @@ function animateCase(caseId, skinId) {
     }, dur + 80);
   });
 }
-function spinDial(roll) {
+let needleDeg = 180;
+function spinDial(roll, bp, side) {
   return new Promise((resolve) => {
     const el = $('upPointer');
     if (!el) return resolve();
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const dur = reduce ? 0 : 4600;
-    const landing = -90 + (roll / 10000) * 180;
-    const start = reduce ? landing : landing - 720;
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const fast = ugFast || reduce;
+    const landing = rollAngle(roll, bp, side);
+    const turns = fast ? (reduce ? 0 : 1) : 4;
+    const dur = reduce ? 0 : fast ? 700 : 4600;
+    let extra = landing - (((needleDeg % 360) + 360) % 360);
+    if (extra < 0) extra += 360;
+    const start = needleDeg;
+    const end = needleDeg + extra + turns * 360;
     const t0 = Date.now();
+    let lastTick = start;
     function frame() {
       const t = dur === 0 ? 1 : Math.min(1, (Date.now() - t0) / dur);
       const e = 1 - Math.pow(1 - t, 3);
-      const ang = start + (landing - start) * e;
-      el.setAttribute('transform', 'rotate(' + ang.toFixed(2) + ' 160 170)');
+      const ang = start + (end - start) * e;
+      el.setAttribute('transform', 'rotate(' + ang.toFixed(2) + ' 160 160)');
+      if (!fast && audioOn && ang - lastTick > 40) {
+        lastTick = ang;
+        blip(640, 0.025, 'square');
+      }
       if (t < 1) requestAnimationFrame(frame);
-      else resolve();
+      else {
+        needleDeg = landing;
+        el.setAttribute('transform', 'rotate(' + landing.toFixed(2) + ' 160 160)');
+        resolve();
+      }
     }
     requestAnimationFrame(frame);
   });
@@ -1610,18 +1682,26 @@ async function doUpgrade() {
     refreshUp();
     return;
   }
-  drawDial(r.chanceBp, r.side);
-  await spinDial(r.roll);
+  drawDial(r.chanceBp);
+  await spinDial(r.roll, r.chanceBp, r.side);
   INV = r.items || INV;
   picked.clear();
   upCash = 0;
   if ($('upRange')) $('upRange').value = '0';
   const wonName = (skinById(r.targetId) || {}).name || 'skiną';
+  const wheel = $('ugWheel');
+  if (wheel) {
+    wheel.classList.remove('win', 'lose');
+    void wheel.offsetWidth;
+    wheel.classList.add(r.won ? 'win' : 'lose');
+  }
   $('upMsg').textContent = r.won ? 'Laimėjai ' + wonName : 'Nepasisekė – įnašas prarastas';
   $('upMsg').className = 'up-result ' + (r.won ? 'win' : 'lose');
   if (r.won) celebrate();
   else blip(180, 0.18, 'sawtooth');
   upLock = false;
+  resultView = { text: r.won ? 'Laimėjai' : 'Nepasisekė', color: r.won ? '#3ddc84' : '#ff5a6a', tier: r.won ? wonName : 'Įnašas prarastas' };
+  resultUntil = Date.now() + 2600;
   refreshUp();
   loadSkins();
 }
@@ -1657,7 +1737,7 @@ function buzz(ms) {
 }
 function paintSound() {
   if ($('soundBtn')) $('soundBtn').setAttribute('aria-pressed', audioOn ? 'true' : 'false');
-  if ($('ugSound')) $('ugSound').textContent = audioOn ? 'Garsas įjungtas' : 'Garsas išjungtas';
+  if ($('ugSound')) $('ugSound').setAttribute('aria-pressed', audioOn ? 'true' : 'false');
 }
 function celebrate() {
   blip(523, 0.12, 'triangle');

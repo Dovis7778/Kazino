@@ -475,11 +475,27 @@ body {
 .toast { animation: fade .2s; }
 .btn:active:not(:disabled) { transform: translateY(1px) scale(.98); }
 input[type="range"] { height: 28px; padding: 0; background: transparent; accent-color: #ffd84d; }
-.gauge { position: relative; width: min(440px, 100%); margin: 0 auto; }
-.gauge svg { width: 100%; height: auto; display: block; }
-.gauge-read { position: absolute; left: 0; right: 0; top: 62%; text-align: center; pointer-events: none; }
-.gauge-read b { display: inline-block; font-size: clamp(28px, 8vw, 40px); line-height: 1; font-weight: 900; color: #fff; font-variant-numeric: tabular-nums; background: rgba(12,9,11,.78); border-radius: 10px; padding: 2px 8px; }
-.gauge-read span { display: inline-block; margin-top: 4px; color: #ffd84d; font-weight: 800; font-size: 13px; background: rgba(12,9,11,.78); border-radius: 8px; padding: 1px 8px; }
+.ug-head { display: grid; grid-template-columns: 48px 1fr 48px; align-items: start; gap: 8px; margin-bottom: 4px; }
+.ug-side { display: flex; flex-direction: column; gap: 8px; }
+.ug-side.right { align-items: flex-end; }
+.ug-title { display: flex; flex-direction: column; align-items: center; gap: 4px; font-weight: 900; letter-spacing: .16em; font-size: 13px; padding-top: 6px; }
+.ug-title .ico { width: 22px; height: 22px; color: var(--gold); }
+.wheelbox { position: relative; width: min(300px, 86vw); margin: 4px auto 12px; }
+.wheelbox svg { width: 100%; height: auto; display: block; }
+.wheel-read { position: absolute; left: 18%; right: 18%; top: 18%; bottom: 18%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+.wheel-mark { position: absolute; width: 42%; height: 42%; opacity: .14; }
+.wheel-read b { position: relative; font-size: clamp(28px, 8vw, 44px); line-height: 1; font-weight: 900; font-variant-numeric: tabular-nums; }
+.wheel-read span { position: relative; margin-top: 6px; font-size: 14px; font-weight: 700; color: #d9d0c2; }
+.wheelbox.win { animation: ugwin .6s ease; }
+.wheelbox.lose { animation: ugshake .45s linear; }
+@keyframes ugwin { 0% { filter: drop-shadow(0 0 0 transparent); } 40% { filter: drop-shadow(0 0 16px #3ddc84); } 100% { filter: none; } }
+@keyframes ugshake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-5px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(3px); } }
+.ug-go { display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(180deg, #e6c24a, #9a7a18); color: #241c08; }
+.ug-go .ico { width: 18px; height: 18px; }
+.ug-go:disabled { filter: grayscale(.35) brightness(.72); }
+.chevstack { width: 36px; height: 42px; filter: drop-shadow(0 0 6px rgba(245,197,24,.85)); }
+.ug-sub { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+@media (min-width: 900px) { .wheelbox { width: 380px; } }
 .ug-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .ug-slot { min-height: 138px; border-radius: 16px; border: 1px solid rgba(255,216,77,.35); background: rgba(255,255,255,.04); color: inherit; padding: 8px; cursor: pointer; }
 .ug-slot-h { display: block; font-size: 12px; line-height: 1.25; color: var(--muted); min-height: 32px; }
@@ -534,8 +550,8 @@ body.in-app .toast { bottom: calc(78px + env(safe-area-inset-bottom)); }
   .ug-quick { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .lobby-card { min-height: 104px; }
   .bj-felt { min-height: 210px; }
-  .gauge svg { max-height: 136px; }
   .up-note { margin: 0; padding: 6px 10px; }
+  body.view-up .app { padding-bottom: calc(124px + env(safe-area-inset-bottom)); }
   body.view-profile .side { padding-bottom: 96px; }
   .ug-slot { min-height: 112px; }
   body.view-kazino [data-tab="home"] { display: none; }
