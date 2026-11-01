@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
   biggest_win INTEGER NOT NULL DEFAULT 0,
   total_wagered INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  last_seen INTEGER NOT NULL
+  last_seen INTEGER NOT NULL,
+  last_daily INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS users_balance ON users(balance DESC);
 CREATE TABLE IF NOT EXISTS sessions (
@@ -67,7 +68,8 @@ CREATE TABLE IF NOT EXISTS users (
   biggest_win BIGINT NOT NULL DEFAULT 0,
   total_wagered BIGINT NOT NULL DEFAULT 0,
   created_at BIGINT NOT NULL,
-  last_seen BIGINT NOT NULL
+  last_seen BIGINT NOT NULL,
+  last_daily BIGINT NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS users_balance ON users(balance DESC);
 CREATE TABLE IF NOT EXISTS sessions (
@@ -104,6 +106,16 @@ CREATE INDEX IF NOT EXISTS skin_events_created ON skin_events(created_at DESC);
 CREATE INDEX IF NOT EXISTS skin_events_user ON skin_events(user_id, id DESC);
 `,
 };
+
+async function ensureUserColumns(db) {
+  // Sena bazė (be last_daily) papildoma, eilučių neperrašant.
+  if (db.kind === 'sqlite') {
+    const cols = db.sql.prepare('PRAGMA table_info(users)').all();
+    if (!cols.some((c) => c.name === 'last_daily')) db.sql.exec('ALTER TABLE users ADD COLUMN last_daily INTEGER NOT NULL DEFAULT 0');
+    return;
+  }
+  await db.pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily BIGINT NOT NULL DEFAULT 0');
+}
 
 const toPg = (sql) => {
   let i = 0;
@@ -143,6 +155,7 @@ class Db {
       db.sql.exec(SCHEMA.sqlite);
       db.stmts = new Map();
     }
+    await ensureUserColumns(db);
     return db;
   }
 

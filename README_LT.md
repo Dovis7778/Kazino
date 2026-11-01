@@ -21,6 +21,9 @@ Taip pat yra:
 - **lyderių lentelė**: 10 turtingiausių žaidėjų iš duomenų bazės, įskaitant atsijungusius;
 - profilis: avataras, sužaistų raundų skaičius, didžiausias laimėjimas, iš viso pastatyta;
 - balanso papildymas žaidimo pinigais („Papildyti balansą“);
+- **dienos dovana**: 1 000,00 € žaidimo pinigų kartą per UTC dieną (mygtukas profilyje);
+- lygis, patirtis ir ženkliukai iš jau sukauptos statistikos;
+- lyderiai pagal balansą, didžiausią laimėjimą ir skinų vertę;
 - **Upgraderio** inventorius, dėžės, parduotuvė ir bendra skinų juosta.
 
 ---
@@ -59,8 +62,8 @@ Inventorius saugomas lentelėje `inventory`, įvykiai – `skin_events`. Senesn�
 - **Vienas ryšys vienai paskyrai:** prisijungus kitame lange ar įrenginyje, senas langas atjungiamas ir parodo „Tęsti šiame lange“.
 - **Apsauga nuo slaptažodžių spėliojimo:**
   - po 5 nesėkmingų bandymų tam pačiam slapyvardžiui iš to paties IP prisijungti galima tik po 10 min.;
-  - iš vieno IP leidžiama ne daugiau kaip 30 nesėkmingų bandymų per 10 min.;
-  - iš vieno IP galima sukurti iki 10 registracijų per valandą.
+  - iš vieno IP leidžiama bent 80 nesėkmingų bandymų per 10 min., kad vieno draugo klaidos neužrakintų viso Wi-Fi;
+  - iš vieno IP galima sukurti iki **60** registracijų per valandą (draugai dažnai dalijasi vienu adresu). Daugiau: `KAZINO_REG_LIMIT`.
 - Nauja paskyra gauna **10 000,00 €** žaidimo pinigų.
 - Pamiršus slaptažodį jo atkurti negalima (el. pašto nėra). Administratorius gali tik atstatyti balansą, todėl tokiu atveju geriausia susikurti naują paskyrą.
 
@@ -168,7 +171,7 @@ Alternatyva: repozitorijoje yra `render.yaml`, todėl galima rinktis **New + →
 | `ADMIN_NICK` | – | administratoriaus slapyvardis (balanso atstatymui) |
 | `TRUST_PROXY` | – (Render: įjungta) | `1`: kliento IP imamas iš `X-Forwarded-For` (reikia už proxy, pvz. Render) |
 | `KAZINO_LOGIN_LIMIT` | `5` | nesėkmingi bandymai per 10 min. vienam slapyvardžiui iš vieno IP |
-| `KAZINO_REG_LIMIT` | `10` | registracijos per valandą iš vieno IP |
+| `KAZINO_REG_LIMIT` | `60` | registracijos per valandą iš vieno IP |
 | `KAZINO_TIME_SCALE` | `1` | laiko greitinimas testams (pvz. `0.05`) |
 
 ## 5. Kaip saugomi pinigai
@@ -200,7 +203,8 @@ kazino-multiplayer/
 │   ├── roulette.js      ruletės statymai ir išmokos
 │   ├── wheel.js         Laimės rato segmentai, daugikliai, premijos, RTP
 │   ├── solo.js          Kauliukai ir Automatas
-│   └── skins.js         skinų katalogas, dėžės, parduotuvė, upgraderio tikimybės
+│   ├── skins.js         skinų katalogas, dėžės, parduotuvė, upgraderio tikimybės
+│   └── progress.js      lygis, patirtis, pasiekimai, dienos dovana
 ├── public/
 │   ├── index.html       puslapio struktūra, taisyklių tekstai
 │   ├── style.css        išvaizda (spalvos: :root kintamieji viršuje)
@@ -231,6 +235,13 @@ Testas paleidžia serverį su laikina SQLite duomenų baze, prijungia virtualius
 - **serverio nužudymą (`kill -9`) vykstant raundams:** po perkrovimo balansai turi išlikti, o atviri statymai turi būti grąžinti. Inventorius ir jau įrašytas balansas irgi išlieka.
 
 Su PostgreSQL: `DATABASE_URL=postgres://… npm test`. ⚠️ Testas **ištrina lenteles** toje duomenų bazėje, todėl naudok tik tuščią testinę bazę, ne tikrąją.
+
+Jei draugui „neveikia“:
+
+- **Puslapis ilgai tuščias arba „Serveris bunda…“** – nemokamas Render po pauzės keliasi 30–60 s. Palauk, puslapis bando pats (`/health`).
+- **Privatus „Safari“ langas** – jei naršyklė neleidžia `localStorage`, sesija galioja tik kol langas atidarytas. Parodomas pranešimas, programa nelūžta.
+- **Keli draugai viename Wi-Fi** – anksčiau iš vieno IP buvo tik 10 registracijų per valandą. Dabar 60.
+- Ryšys pirmiausia eina per **polling**, paskui per websocket, todėl veikia ir ten, kur websocket užblokuotas.
 
 ## 8. Apribojimai
 

@@ -6,9 +6,27 @@
   <meta name="theme-color" content="#0e090b" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%8E%B0%3C/text%3E%3C/svg%3E" />
     <title>Kazino · Upgrader – žaidimo pinigai</title>
+  <style>
+    .boot { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 80; display: flex; align-items: center; justify-content: center; background: #0b0709; color: #f4ecd2; padding: 24px; text-align: center; font-family: system-ui, -apple-system, sans-serif; }
+    .boot.hidden { display: none; }
+    .boot-card { max-width: 360px; }
+    .boot-logo { font-weight: 900; font-size: 28px; color: #ffd84d; margin-bottom: 8px; }
+    .boot-spin { width: 36px; height: 36px; margin: 14px auto; border-radius: 50%; border: 3px solid rgba(255,216,77,.25); border-top-color: #ffd84d; animation: bootspin .8s linear infinite; }
+    @keyframes bootspin { to { transform: rotate(360deg); } }
+    .boot p { margin: 8px 0; line-height: 1.4; }
+    .boot .small { color: #b8ad92; font-size: 14px; }
+  </style>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="boot" class="boot" role="status">
+    <div class="boot-card">
+      <div class="boot-logo">Kazino</div>
+      <div class="boot-spin" aria-hidden="true"></div>
+      <p id="bootMsg">Jungiamasi…</p>
+      <p class="small">Žaidimo pinigai, ne tikri. Jei serveris miegojo, pabudimas gali užtrukti iki minutės – puslapis bandys pats.</p>
+    </div>
+  </div>
   <!-- Prisijungimo / registracijos ekranas -->
   <section id="join" class="join">
     <div class="join-card">
@@ -30,6 +48,7 @@
         <button id="authBtn" class="btn primary wide" type="button">Prisijungti</button>
         <button id="resumeBtn" class="btn wide hidden" type="button">Tęsti šiame lange</button>
         <p id="authErr" class="err" role="alert"></p>
+        <p id="storeNote" class="small hidden">Ši naršyklė neišsaugo sesijos (privatus langas). Prisijungimas galios, kol neuždarysi lango.</p>
         <p class="small">Slapyvardis: 3–16 raidžių, skaičių arba „_“. El. pašto ar kitų asmens duomenų nereikia. Nauja paskyra gauna 10 000,00 € žaidimo pinigų; balansas išsaugomas.</p>
       </div>
     </div>
@@ -41,6 +60,7 @@
       <div class="brand">🎰 <span>Kazino</span></div>
       <div class="bal" title="Žaidimo pinigai"><span class="bal-l">Balansas</span><b id="myBal">0,00 €</b></div>
       <button id="profBtn" class="code-chip" type="button" title="Profilis"><span id="meAvatar">🙂</span> <b id="meNick"></b></button>
+      <button id="soundBtn" class="btn small" type="button" aria-pressed="false" title="Garsai">Garsas išj.</button>
       <button id="topBtn" class="btn small" type="button">Papildyti</button>
       <nav class="sections" role="tablist" aria-label="Skyrius">
         <button class="secbtn active" data-section="casino" type="button">Kazino</button>
@@ -48,10 +68,17 @@
       </nav>
     </header>
     <div class="notice-bar">Žaidimo pinigai, ne tikri · <span id="meName"></span> <span id="conn" class="conn on">● prisijungta</span></div>
+    <div id="netBanner" class="netbanner hidden" role="status"><b id="netTitle">Ryšys</b> <span id="netText"></span> <span id="healthNote"></span></div>
 
     <div id="profPanel" class="panel hidden">
       <div class="panel-h">Mano profilis</div>
       <div id="profStats" class="prof-stats"></div>
+      <div id="levelBox" class="levelbox"></div>
+      <div class="row wrap">
+        <button id="dailyBtn" class="btn primary" type="button">Dienos dovana</button>
+        <span id="dailyMsg" class="small"></span>
+      </div>
+      <div id="achBox" class="achs"></div>
       <div class="lbl">Pasirink avatarą</div>
       <div id="profAvatars" class="avatars"></div>
       <div id="adminBox" class="row wrap hidden">
@@ -78,23 +105,32 @@
 
     <div class="layout">
       <nav class="tabs sidenav" id="gameNav" role="tablist" aria-label="Žaidimai">
-        <button class="tab active" data-tab="bj" type="button">🃏 Blackjack</button>
+        <button class="tab active" data-tab="home" type="button">🏠 Salė</button>
+        <button class="tab" data-tab="bj" type="button">🃏 Blackjack</button>
         <button class="tab" data-tab="rl" type="button">🎯 Ruletė</button>
         <button class="tab" data-tab="lt" type="button">🎡 Laimės ratas</button>
         <button class="tab" data-tab="dc" type="button">🎲 Kauliukai</button>
         <button class="tab" data-tab="sl" type="button">🍒 Automatas</button>
       </nav>
       <nav class="tabs sidenav uptabs hidden" id="upNav" role="tablist" aria-label="Upgrader">
-        <button class="uptab active" data-up="cases" type="button">📦 Dėžės</button>
-        <button class="uptab" data-up="shop" type="button">🛍️ Parduotuvė</button>
-        <button class="uptab" data-up="upgrade" type="button">🎡 Upgrader</button>
-        <button class="uptab" data-up="inv" type="button">🎒 Inventorius</button>
-        <button class="uptab" data-up="hist" type="button">📜 Istorija</button>
+        <button class="uptab active" data-up="upgrade" type="button">Upgrader</button>
+        <button class="uptab" data-up="cases" type="button">Dėžės</button>
+        <button class="uptab" data-up="hist" type="button">Istorija</button>
       </nav>
       <main class="games">
         <div id="sec-casino">
+        <div class="game" id="g-home">
+          <div class="lobby" id="lobby">
+            <button class="lobby-card" type="button" data-goto="bj"><span class="lobby-ico">🃏</span><b>Blackjack</b><span>Bendri stalai, iki 7 žaidėjų</span></button>
+            <button class="lobby-card" type="button" data-goto="rl"><span class="lobby-ico">🎯</span><b>Ruletė</b><span>Viena bendra, europietiška</span></button>
+            <button class="lobby-card" type="button" data-goto="lt"><span class="lobby-ico">🎡</span><b>Laimės ratas</b><span>Bendras ratas ir premijos</span></button>
+            <button class="lobby-card" type="button" data-goto="dc"><span class="lobby-ico">🎲</span><b>Kauliukai</b><span>Individualiai, 99 % grąža</span></button>
+            <button class="lobby-card" type="button" data-goto="sl"><span class="lobby-ico">🍒</span><b>Automatas</b><span>Trys būgnai, tavo sukimas</span></button>
+            <button class="lobby-card up" type="button" data-goto-sec="up"><span class="lobby-ico">✨</span><b>Upgrader</b><span>Dėžės, skinai, ratas</span></button>
+          </div>
+        </div>
         <!-- BLACKJACK -->
-        <div class="game" id="g-bj">
+        <div class="game hidden" id="g-bj">
           <div id="bjTables" class="bj-tables"></div>
           <div class="felt bj-felt">
             <div class="status"><span id="bjStatus">Statymai</span><span class="timer" id="bjTimer"></span></div>
@@ -228,10 +264,10 @@
         </div>
 
         <div id="sec-up" class="upsec hidden">
-          <p class="up-note">Žaidimo pinigai, ne tikri. Skinų negalima iškeisti, išsiimti ar parduoti už tikrus pinigus. Tikimybės ir grąžinimas parašyti prie kiekvieno veiksmo.</p>
-          <div id="up-cases" class="up-panel"></div>
+          <p class="up-note">Žaidimo pinigai, ne tikri. Skinų neiškeisi ir neišsiimsi.</p>
+          <div id="up-cases" class="up-panel hidden"></div>
           <div id="up-shop" class="up-panel hidden"></div>
-          <div id="up-upgrade" class="up-panel hidden"></div>
+          <div id="up-upgrade" class="up-panel"></div>
           <div id="up-inv" class="up-panel hidden"></div>
           <div id="up-hist" class="up-panel hidden"></div>
         </div>
@@ -248,17 +284,31 @@
         </div>
         <div class="box">
           <div class="box-h">🏆 Lyderiai</div>
+          <div class="seg leadseg" id="leadSeg">
+            <button class="segb active" type="button" data-lead="bal">Balansas</button>
+            <button class="segb" type="button" data-lead="win">Laimėjimas</button>
+            <button class="segb" type="button" data-lead="inv">Skinai</button>
+          </div>
           <ol id="leaders" class="players"></ol>
         </div>
         <div class="box chatbox">
           <div class="box-h">💬 Bendras pokalbis</div>
           <div id="chat" class="chat"></div>
+          <div id="emojiBar" class="emojis"></div>
           <div class="row"><input id="chatIn" maxlength="300" placeholder="Rašyk žinutę…" /><button id="chatSend" class="btn small" type="button">Siųsti</button></div>
         </div>
       </aside>
     </div>
   </section>
 
+  <nav class="bottomnav" id="bottomNav" aria-label="Apačia">
+    <button type="button" data-bnav="home">Salė</button>
+    <button type="button" data-bnav="games">Žaidimai</button>
+    <button type="button" data-bnav="up">Upgrader</button>
+    <button type="button" data-bnav="chat">Pokalbiai</button>
+    <button type="button" data-bnav="profile">Profilis</button>
+  </nav>
+  <canvas id="fx" class="fx" aria-hidden="true"></canvas>
   <div id="toast" class="toast hidden" role="status"></div>
   <div id="profModal" class="modal hidden"><div class="modal-card" id="profModalBody"></div></div>
   <script src="/socket.io/socket.io.js"></script>

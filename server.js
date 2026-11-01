@@ -14,23 +14,37 @@ const { LT, LT_SEQ, LT_TOPM, LT_COIN, LT_PL, LT_HUNT, LT_BIG, LT_ROWS, rtp, bonu
 const { WHEEL_ORDER, RED } = require('./src/roulette');
 const { TOPUP_MAX, START_BALANCE, isCents } = require('./src/money');
 const skinsMod = require('./src/skins');
+const progress = require('./src/progress');
 
 const PORT = Number(process.env.PORT) || 3000;
 const SESSION_DAYS = 30;
 const TRUST_PROXY = process.env.TRUST_PROXY === '1' || !!process.env.RENDER;
 const ADMIN_NICK = (process.env.ADMIN_NICK || '').toLowerCase();
 const LOGIN_MAX = Number(process.env.KAZINO_LOGIN_LIMIT) || 5; // nesėkmingi bandymai / 10 min. vienam slapyvardžiui
-const REG_MAX = Number(process.env.KAZINO_REG_LIMIT) || 10; // registracijos / val. iš vieno IP
+const REG_MAX = Number(process.env.KAZINO_REG_LIMIT) || 60; // registracijos / val. iš vieno IP (draugai dažnai dalijasi Wi-Fi)
 
 async function createServer(opts = {}) {
   const db = await Db.open(opts.db || {});
   const app = express();
   app.disable('x-powered-by');
   if (TRUST_PROXY) app.set('trust proxy', 1);
-  app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
+  app.use(express.static(path.join(__dirname, 'public'), {
+    maxAge: '1h',
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+    },
+  }));
 
   const server = http.createServer(app);
-  const io = new Server(server, { maxHttpBufferSize: 1e5 });
+  const io = new Server(server, {
+    maxHttpBufferSize: 1e5,
+    // Pirma polling (veikia per griežtus tinklus ir senesnį Safari), tada websocket.
+    transports: ['polling', 'websocket'],
+    allowUpgrades: true,
+    cors: { origin: true, methods: ['GET', 'POST'] },
+    pingTimeout: 60000,
+    pingInterval: 25000,
+  });
   const sessionsOf = new Map(); // socket.id -> vartotojas
 
   const casino = new Casino(db, (c) => {
@@ -55,11 +69,12 @@ async function createServer(opts = {}) {
       roulette: { order: WHEEL_ORDER, red: [...RED] },
       slot: { syms: SL_SYMS, pay3: SL_PAY3, twoCherry: SL_TWO_CHERRY, rtp: slotRtp() },
       skins: skinsMod.publicConfig(),
+      progress: progress.publicProgress(),
     })
   );
 
   const loginFails = new A.Limiter(LOGIN_MAX, 10 * 60 * 1000);
-  const ipFails = new A.Limiter(LOGIN_MAX * 6, 10 * 60 * 1000);
+  const ipFails = new A.Limiter(Math.max(LOGIN_MAX * 6, 80), 10 * 60 * 1000);
   const regs = new A.Limiter(REG_MAX, 60 * 60 * 1000);
   const sweeper = setInterval(() => {
     loginFails.sweep();
@@ -157,7 +172,7 @@ async function createServer(opts = {}) {
       if (!nick) return fail(cb, 'Slapyvardis: 3–16 raidžių, skaičių arba _');
       if (!A.validPassword(d.password)) return fail(cb, 'Slaptažodis turi būti 6–100 simbolių');
       const ip = ipOf(socket);
-      if (regs.blocked(ip)) return fail(cb, 'Per daug registracijų iš šio adreso. Pabandyk vėliau.');
+      if (regs.blocked(ip)) return fail(cb, 'Per daug naujų paskyrų iš šio interneto adreso per valandą. Draugai tame pačiame Wi-Fi dalijasi vienu adresu – palauk ir bandyk vėliau.');
       busy = true;
       try {
         const lc = A.nickKey(nick);
@@ -266,6 +281,32 @@ async function createServer(opts = {}) {
       lastChat = now;
       casino.addChat(u.name, text, u.avatar);
       ok(cb);
+    });
+
+    on('bonus:claim', async (_d, cb) => {
+      const u = need(cb);
+      if (!u) return;
+      const today = progress.utcDay();
+      const row = await db.get('SELECT last_daily FROM users WHERE id = ?', [u.id]);
+      const prev = row ? Number(row.last_daily) || 0 : 0;
+      if (prev === today) return fail(cb, 'Šiandienos dovaną jau paėmei. Kita bus rytoj (pasaulio laiku, UTC).');
+      const amount = casino.capped(u, progress.DAILY_BONUS);
+      if (amount <= 0) return fail(cb, 'Balansas jau per didelis šiai dovanai.');
+      u.balance += amount;
+      try {
+        const changes = await db.tx([['UPDATE users SET balance = balance + ?, last_daily = ? WHERE id = ? AND last_daily = ?', [amount, today, u.id, prev]]]);
+        if (!changes || changes[0] !== 1) {
+          u.balance -= amount;
+          return fail(cb, 'Šiandienos dovaną jau paėmei. Kita bus rytoj (pasaulio laiku, UTC).');
+        }
+      } catch (e) {
+        u.balance -= amount;
+        casino.changed();
+        return fail(cb, 'Dovanos įrašyti nepavyko. Bandyk dar kartą.');
+      }
+      casino.scheduleLeaders();
+      casino.changed();
+      ok(cb, { amount: amount, balance: u.balance, day: today });
     });
 
     on('topup', async (amount, cb) => {

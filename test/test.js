@@ -16,6 +16,7 @@ const { handValue } = require('../src/blackjack');
 const W = require('../src/wheel');
 const solo = require('../src/solo');
 const skins = require('../src/skins');
+const progress = require('../src/progress');
 
 const PG = process.env.DATABASE_URL || '';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'kazino-test-'));
@@ -101,6 +102,12 @@ async function openDb() {
 async function main() {
   const t0 = Date.now();
 
+  ok(progress.xpOf({ games: 0, wagered: 0 }, 0) === 0 && progress.levelOf(0).level === 1, 'lygis 1 be patirties');
+  ok(progress.levelOf(100).level === 2 && progress.levelOf(progress.xpOf({ games: 4, wagered: 0 }, 0)).level >= 1, 'patirtis kyla');
+  ok(progress.utcDay(Date.UTC(2026, 0, 2)) === 20260102, 'UTC diena');
+  ok(progress.achievements({ games: 10, biggestWin: 0, wagered: 0, items: 0, balance: 0 }).filter((a) => a.ok).length >= 3, 'pasiekimai');
+  ok(progress.DAILY_BONUS === 100000, 'dienos dovana 1 000 €');
+
   // Tikimybių matematika (be serverio).
   const V = skins.byId('ak-gintaras').value;
   ok(skins.chanceBp(skins.minInputFor(V) - 1, V) === null, 'žemiau 1 % atmetama');
@@ -129,6 +136,8 @@ async function main() {
     const d0 = await Db.open({ url: '', file });
     const old = await d0.get('SELECT balance FROM users WHERE nick_lc = ?', ['senas']);
     ok(old && old.balance === 123456, 'migracija išsaugo seną balansą');
+    const dailyCol = await d0.get('SELECT last_daily FROM users WHERE nick_lc = ?', ['senas']);
+    ok(dailyCol && Number(dailyCol.last_daily) === 0, 'migracija prideda last_daily');
     const tables = await d0.all("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('inventory', 'skin_events')");
     ok(tables.length === 2, 'inventory ir skin_events sukuriamos šalia senų lentelių');
     await d0.close();
@@ -553,6 +562,16 @@ async function main() {
   ok(lg.ok, 'prisijungimas slaptažodžiu po perkrovimo');
   await A4.wait((s) => !!s.me);
   ok(A4.st.me.balance === pre.A, 'balansas tas pats');
+  ok(Array.isArray(A4.st.leadersWin) && Array.isArray(A4.st.leadersInv), 'lyderių lentelės: laimėjimas ir skinų vertė');
+
+  const dov = await register('Dovana');
+  const dovBefore = dov.st.me.balance;
+  const gift = await dov.emit('bonus:claim', {});
+  ok(gift.ok && gift.amount === progress.DAILY_BONUS && gift.balance === dovBefore + progress.DAILY_BONUS, 'dienos dovana');
+  await dov.wait((s) => s.me.balance === dovBefore + progress.DAILY_BONUS);
+  const gift2 = await dov.emit('bonus:claim', {});
+  ok(!gift2.ok && /jau paėmei/.test(gift2.error), 'antra dovana tą pačią UTC dieną atmesta');
+  await dov.wait((s) => s.me.balance === dovBefore + progress.DAILY_BONUS);
 
   const oda2 = await client(odaSnap.token);
   await oda2.wait((s) => !!s.me);

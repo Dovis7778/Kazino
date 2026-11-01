@@ -2,17 +2,92 @@
    Klientas tik rodo serverio būseną ir siunčia veiksmus; visi rezultatai skaičiuojami serveryje. */
 'use strict';
 
+if (!String.prototype.padStart) {
+  String.prototype.padStart = function (len, ch) {
+    var s = String(this);
+    ch = ch == null ? ' ' : String(ch);
+    while (s.length < len) s = ch + s;
+    return s;
+  };
+}
+
 const $ = (id) => document.getElementById(id);
-const qsa = (sel) => [...document.querySelectorAll(sel)];
+const qsa = (sel) => Array.prototype.slice.call(document.querySelectorAll(sel));
 const TOKEN_KEY = 'kazino:token';
-// Žetonas siunčiamas prisijungimo (handshake) metu – serveris atkuria sesiją.
-const socket = io({ autoConnect: false, auth: (cb) => cb({ token: localStorage.getItem(TOKEN_KEY) || '' }) });
+const memStore = {};
+let storeMemoryOnly = false;
+function storeGet(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (e) {
+    storeMemoryOnly = true;
+    return memStore[key] == null ? null : memStore[key];
+  }
+}
+function storeSet(key, value) {
+  memStore[key] = String(value);
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch (e) {
+    storeMemoryOnly = true;
+  }
+}
+function storeDel(key) {
+  delete memStore[key];
+  try {
+    window.localStorage.removeItem(key);
+  } catch (e) {
+    storeMemoryOnly = true;
+  }
+}
+function setBoot(text) {
+  const el = $('bootMsg');
+  if (el && text) el.textContent = text;
+}
+function hideBoot() {
+  const el = $('boot');
+  if (el) el.classList.add('hidden');
+}
+function showNet(title, text) {
+  const bar = $('netBanner');
+  if (!bar) return;
+  bar.classList.remove('hidden');
+  if ($('netTitle')) $('netTitle').textContent = title || 'Ryšys';
+  if ($('netText')) $('netText').textContent = text || '';
+}
+function hideNet() {
+  const bar = $('netBanner');
+  if (bar) bar.classList.add('hidden');
+}
+
+// Žetonas siunčiamas prisijungimo (handshake) metu. Pirma polling, paskui websocket.
+const socket = (typeof io === 'function')
+  ? io({
+      autoConnect: false,
+      transports: ['polling', 'websocket'],
+      upgrade: true,
+      rememberUpgrade: false,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 800,
+      reconnectionDelayMax: 5000,
+      timeout: 25000,
+      auth: function (cb) { cb({ token: storeGet(TOKEN_KEY) || '' }); },
+    })
+  : {
+      connected: false,
+      on: function () {},
+      connect: function () {},
+      disconnect: function () {},
+      timeout: function () { return { emit: function (_e, _d, cb) { if (cb) cb(new Error('offline')); } }; },
+    };
+if (typeof io !== 'function') setBoot('Nepavyko įkelti ryšio bibliotekos. Patikrink tinklą ir perkrauk puslapį.');
 
 let CFG = null; // statinės lentelės iš /config.json
 let S = null; // paskutinė serverio būsena
 const me = { name: '', avatar: '', admin: false, in: false };
 const deadlines = { bj: 0, rl: 0, lt: 0 };
-let tab = 'bj';
+let tab = 'home';
 let myBal = 0;
 
 /* ---------- pagalbinės ---------- */
@@ -68,7 +143,7 @@ function toast(text, good) {
 function send(ev, data, quiet) {
   return new Promise((res) => {
     socket.timeout(10000).emit(ev, data, (err, r) => {
-      if (err) r = { ok: false, error: 'Serveris neatsako' };
+      if (err) r = { ok: false, error: 'Serveris neatsako. Jei ką tik atidarei puslapį, palauk – nemokamas serveris bunda (kartais iki minutės) – ir bandyk dar kartą.' };
       if (!r.ok && r.error && !quiet) toast(r.error);
       res(r);
     });
@@ -82,6 +157,13 @@ function wedge(cx, cy, r0, r1, a0, a1) {
 /* ---------- paskyra: prisijungimas / registracija ---------- */
 let authMode = 'login';
 let regAvatar = '🙂';
+function nickOk(n) {
+  try {
+    return new RegExp('^[\\p{L}\\p{N}_]{3,16}$', 'u').test(n);
+  } catch (e) {
+    return /^[0-9A-Za-zĄČĘĖĮŠŲŪŽąčęėįšųūž_]{3,16}$/.test(n);
+  }
+}
 function showAuth(msg, canResume) {
   me.in = false;
   $('app').classList.add('hidden');
@@ -90,6 +172,9 @@ function showAuth(msg, canResume) {
   $('authForm').classList.remove('hidden');
   $('authErr').textContent = msg || '';
   $('resumeBtn').classList.toggle('hidden', !canResume);
+  hideBoot();
+  const note = $('storeNote');
+  if (storeMemoryOnly && note) note.classList.remove('hidden');
 }
 function setAuthMode(m) {
   authMode = m;
@@ -114,7 +199,9 @@ function enterApp(user, resumed) {
   me.avatar = user.avatar;
   me.admin = !!user.admin;
   me.in = true;
-  localStorage.setItem('kazino:nick', user.name);
+  storeSet('kazino:nick', user.name);
+  hideBoot();
+  hideNet();
   $('join').classList.add('hidden');
   $('app').classList.remove('hidden');
   $('meNick').textContent = user.name;
@@ -129,7 +216,7 @@ async function doAuth() {
   const password = $('passIn').value;
   if (!nick || !password) return ($('authErr').textContent = 'Įvesk slapyvardį ir slaptažodį');
   if (authMode === 'register') {
-    if (!/^[\p{L}\p{N}_]{3,16}$/u.test(nick)) return ($('authErr').textContent = 'Slapyvardis: 3–16 raidžių, skaičių arba _');
+    if (!nickOk(nick)) return ($('authErr').textContent = 'Slapyvardis: 3–16 raidžių, skaičių arba _');
     if (password.length < 6) return ($('authErr').textContent = 'Slaptažodis turi būti bent 6 simbolių');
     if (password !== $('pass2In').value) return ($('authErr').textContent = 'Slaptažodžiai nesutampa');
   }
@@ -138,7 +225,7 @@ async function doAuth() {
   const r = await send(authMode, { nick, password, avatar: regAvatar }, true);
   $('authBtn').disabled = false;
   if (!r.ok) return ($('authErr').textContent = r.error || 'Nepavyko');
-  localStorage.setItem(TOKEN_KEY, r.token);
+  storeSet(TOKEN_KEY, r.token);
   $('passIn').value = '';
   $('pass2In').value = '';
   enterApp(r.user, false);
@@ -156,18 +243,34 @@ socket.on('auth', (r) => {
   $('authWait').classList.add('hidden');
   if (r.ok) enterApp(r.user, r.resumed && !me.in);
   else {
-    localStorage.removeItem(TOKEN_KEY);
-    showAuth(r.error);
+    storeDel(TOKEN_KEY);
+    showAuth(r.error || 'Prisijungti nepavyko. Patikrink slapyvardį ir slaptažodį.');
   }
 });
 socket.on('connect', () => {
-  $('conn').textContent = '● prisijungta';
-  $('conn').className = 'conn on';
+  if ($('conn')) {
+    $('conn').textContent = '● prisijungta';
+    $('conn').className = 'conn on';
+  }
+  hideNet();
+  if (!me.in && !$('authForm').classList.contains('hidden')) hideBoot();
+});
+socket.on('connect_error', () => {
+  setBoot('Serveris bunda… Ryšys dar neatsirado, bandome dar kartą.');
+  showNet('Serveris neatsako', 'Nemokamas serveris po pauzės bunda iki minutės. Jungiamasi iš naujo automatiškai.');
+  if ($('conn')) {
+    $('conn').textContent = '● nepavyksta prisijungti, bandome dar kartą…';
+    $('conn').className = 'conn off';
+  }
 });
 socket.on('disconnect', (reason) => {
-  $('conn').textContent = '● ryšys nutrūko, jungiamasi…';
-  $('conn').className = 'conn off';
-  if (reason === 'io server disconnect' && me.in) showAuth('Atjungta', !!localStorage.getItem(TOKEN_KEY));
+  if ($('conn')) {
+    $('conn').textContent = '● ryšys nutrūko, jungiamasi…';
+    $('conn').className = 'conn off';
+  }
+  showNet('Ryšys nutrūko', 'Bandom iš naujo. Jei tai pirmas apsilankymas po pauzės, palauk iki minutės.');
+  pollHealth();
+  if (reason === 'io server disconnect' && me.in) showAuth('Atjungta šiame lange. Gali tęsti iš naujo.', !!storeGet(TOKEN_KEY));
 });
 socket.on('kicked', (m) => {
   me.in = false;
@@ -180,19 +283,56 @@ $('profBtn').onclick = () => {
   $('topPanel').classList.add('hidden');
   renderProfile();
 };
+function progressNow() {
+  const rules = (CFG && CFG.progress) || { game: 25, wagerDiv: 100, item: 40, daily: 100000 };
+  const st = S && S.me ? S.me.stats : { games: 0, wagered: 0, biggestWin: 0 };
+  const xp = (st.games || 0) * rules.game + Math.floor((st.wagered || 0) / rules.wagerDiv) + INV.length * rules.item;
+  let level = 1;
+  let need = 100;
+  let rest = xp;
+  while (rest >= need && level < 99) {
+    rest -= need;
+    level += 1;
+    need = Math.floor(need * 1.15 + 20);
+  }
+  return { xp: xp, level: level, into: rest, next: need, daily: rules.daily, st: st };
+}
+function achievementList() {
+  const st = S && S.me ? S.me.stats : { games: 0, biggestWin: 0, wagered: 0 };
+  const bal = S && S.me ? S.me.balance : 0;
+  const items = INV.length;
+  return [
+    ['Pirmas žingsnis', true],
+    ['Prie stalo', st.games >= 1],
+    ['Dešimtukas', st.games >= 10],
+    ['Šimtukas', st.games >= 100],
+    ['Stambus laimėjimas', st.biggestWin >= 100000],
+    ['Drąsus statymas', st.wagered >= 1000000],
+    ['Kolekcija', items >= 5],
+    ['Turčius', bal >= 2000000],
+  ];
+}
 function renderProfile() {
-  if (!S || !S.me || $('profPanel').classList.contains('hidden')) return;
+  if (!S || !S.me || !$('profPanel') || $('profPanel').classList.contains('hidden')) return;
   const st = S.me.stats;
+  const pr = progressNow();
   $('profStats').innerHTML =
-    '<div>Balansas<b>' + fmt(S.me.balance) + '</b></div><div>Sužaista raundų<b>' + st.games.toLocaleString('lt-LT') + '</b></div><div>Didžiausias laimėjimas<b>' + fmt(st.biggestWin) + '</b></div><div>Iš viso pastatyta<b>' + fmt(st.wagered) + '</b></div>';
+    '<div>Balansas<b>' + fmt(S.me.balance) + '</b></div><div>Sužaista raundų<b>' + st.games.toLocaleString('lt-LT') + '</b></div><div>Didžiausias laimėjimas<b>' + fmt(st.biggestWin) + '</b></div><div>Iš viso pastatyta<b>' + fmt(st.wagered) + '</b></div><div>Lygis<b>' + pr.level + '</b></div><div>Patirtis<b>' + pr.xp.toLocaleString('lt-LT') + '</b></div>';
+  if ($('levelBox')) {
+    const pct = Math.max(0, Math.min(100, Math.round((pr.into / pr.next) * 100)));
+    $('levelBox').innerHTML = '<div class="lvl-top"><b>Lygis ' + pr.level + '</b><span>' + pr.into + ' / ' + pr.next + '</span></div><div class="lvl-bar"><div style="width:' + pct + '%"></div></div>';
+  }
+  if ($('achBox')) {
+    $('achBox').innerHTML = achievementList().map((a) => '<span class="ach' + (a[1] ? ' on' : '') + '">' + esc(a[0]) + '</span>').join('');
+  }
   if (!$('profAvatars').childElementCount || $('profAvatars').dataset.cur !== S.me.avatar) {
     $('profAvatars').dataset.cur = S.me.avatar;
     avatarPicker($('profAvatars'), S.me.avatar, (a) => send('profile:avatar', a));
   }
 }
 $('logoutBtn').onclick = async () => {
-  await send('logout', { token: localStorage.getItem(TOKEN_KEY) });
-  localStorage.removeItem(TOKEN_KEY);
+  await send('logout', { token: storeGet(TOKEN_KEY) });
+  storeDel(TOKEN_KEY);
   $('profPanel').classList.add('hidden');
   showAuth('Atsijungei. Iki!');
 };
@@ -244,12 +384,14 @@ $('resetBal').onclick = async () => {
 };
 
 /* ---------- skirtukai ---------- */
+function setGameTab(name) {
+  tab = name;
+  qsa('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
+  qsa('.game').forEach((g) => g.classList.toggle('hidden', g.id !== 'g-' + name));
+  qsa('#bottomNav [data-bnav]').forEach((b) => b.classList.toggle('on', (name === 'home' && b.dataset.bnav === 'home') || (name !== 'home' && b.dataset.bnav === 'games' && section === 'casino')));
+}
 qsa('.tab').forEach((t) => {
-  t.onclick = () => {
-    tab = t.dataset.tab;
-    qsa('.tab').forEach((x) => x.classList.toggle('active', x === t));
-    qsa('.game').forEach((g) => g.classList.toggle('hidden', g.id !== 'g-' + tab));
-  };
+  t.onclick = () => setGameTab(t.dataset.tab);
 });
 
 /* ---------- žetonai ---------- */
@@ -320,15 +462,30 @@ socket.on('state', (st) => {
   renderFeed();
 });
 
+let leadMode = 'bal';
 function renderPlayers() {
+  if (!S) return;
   $('onlineCount').textContent = '(' + S.online.length + ')';
   $('players').innerHTML = S.online
     .slice(0, 50)
     .map((p) => '<li class="' + (p.name === me.name ? 'me' : '') + '"><span class="nm" data-prof="' + esc(p.name) + '">' + esc(p.avatar) + ' ' + esc(p.name) + (p.bj ? '<span class="tag">· stalas ' + p.bj + '</span>' : '') + '</span><b>' + fmt(p.balance) + '</b></li>')
     .join('');
-  $('leaders').innerHTML = S.leaders
-    .map((p, i) => '<li class="' + (p.name === me.name ? 'me ' : '') + (p.online ? '' : 'off') + '"><span class="nm" data-prof="' + esc(p.name) + '">' + (i === 0 ? '👑' : i + 1 + '.') + ' ' + esc(p.avatar) + ' ' + esc(p.name) + '</span><b>' + fmt(p.balance) + '</b></li>')
+  const list = leadMode === 'win' ? S.leadersWin || [] : leadMode === 'inv' ? S.leadersInv || [] : S.leaders || [];
+  $('leaders').innerHTML = list
+    .map((p, i) => {
+      const shown = leadMode === 'win' ? fmt(p.biggestWin || 0) : leadMode === 'inv' ? fmt(p.value || 0) : fmt(p.balance);
+      return '<li class="' + (p.name === me.name ? 'me ' : '') + (p.online ? '' : 'off') + '"><span class="nm" data-prof="' + esc(p.name) + '">' + (i === 0 ? '👑' : i + 1 + '.') + ' ' + esc(p.avatar) + ' ' + esc(p.name) + '</span><b>' + shown + '</b></li>';
+    })
     .join('');
+}
+if ($('leadSeg')) {
+  $('leadSeg').onclick = (e) => {
+    const b = e.target.closest('[data-lead]');
+    if (!b) return;
+    leadMode = b.dataset.lead;
+    qsa('#leadSeg .segb').forEach((x) => x.classList.toggle('active', x === b));
+    renderPlayers();
+  };
 }
 ['players', 'leaders'].forEach((id) => ($(id).onclick = (e) => {
   const n = e.target.closest('[data-prof]');
@@ -902,7 +1059,9 @@ function buildSlotRules() {
 
 /* ---------- skyriai ir Upgrader ---------- */
 let section = 'casino';
-let upTab = 'cases';
+let upTab = 'upgrade';
+let ugTab = 'mine';
+let mineSrc = 'inv';
 let INV = [];
 let HIST = [];
 let picked = new Set();
@@ -960,7 +1119,7 @@ function skinCardHtml(skin, opts) {
   opts = opts || {};
   const r = rarityOf(skin.rarity);
   const w = wearOf(skin.wear);
-  return '<button type="button" class="skin-card' + (opts.selected ? ' sel' : '') + '" style="--r:' + r.color + '" ' + (opts.attrs || '') + '><div class="art">' + weaponSvg(skin.weapon, r.color) + '</div><div class="rname">' + esc(r.name) + '</div><div class="sname">' + esc(skin.name) + '</div><div class="wear">' + esc(w.name) + '</div><div class="price">' + fmt(opts.price != null ? opts.price : skin.value) + '</div></button>';
+  return '<button type="button" class="skin-card' + (opts.selected ? ' sel' : '') + '" style="--r:' + r.color + '" ' + (opts.attrs || '') + '><span class="rstrip" style="background:' + r.color + '"></span><div class="art">' + weaponSvg(skin.weapon, r.color) + '</div><div class="rname">' + esc(r.name) + '</div><div class="sname">' + esc(skin.name) + '</div><div class="wear">' + esc(w.name) + '</div><div class="price">' + fmt(opts.price != null ? opts.price : skin.value) + '</div></button>';
 }
 function arcPath(cx, cy, r, a0, a1) {
   const span = a1 - a0;
@@ -1023,7 +1182,15 @@ function buildUpgrader() {
   $('up-cases').innerHTML = '<div id="caseReel" class="reel-window hidden"></div><div id="caseMsg" class="up-result"></div><div id="caseGrid" class="case-grid"></div>';
   $('up-shop').innerHTML = '<p class="small">Kaina lygi katalogo vertei. Pardavus atgauni ' + CFG.skins.sell.num + ' % (centai apvalinami žemyn).</p><div id="shopFilters" class="filters"></div><div id="shopGrid" class="skin-grid"></div>';
   $('up-upgrade').innerHTML =
-    '<div class="dial-wrap"><div class="dial"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="78" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="14"/><path id="upArc" fill="none" stroke="#7dffb0" stroke-width="14"/></svg><div id="upPointer" class="dial-pointer"></div><div class="dial-read"><span class="small">Tikimybė</span><b id="upChance">—</b></div></div><div><div class="seg"><button class="segb active" id="sideUnder" type="button">Žemiau</button><button class="segb" id="sideOver" type="button">Virš</button></div><p class="small">Tikimybė = įnašo vertė / tikslo vertė × ' + (100 - CFG.skins.upgrade.edge * 100).toFixed(0) + ' %. Mažiausia 1 %, didžiausia 80 %. Virš 80 % ji nukerpama (tada grąža mažesnė). Namų dalis ' + edge + '. Metimą renka serveris. Pralaimėjus įnašas prarandamas, laimėjus gauni tikslo skiną.</p><div class="row wrap"><input id="upCashIn" inputmode="decimal" placeholder="Pridėti iš balanso, €" /><button class="btn" id="upCashBtn" type="button">Įdėti sumą</button><button class="btn ghost" id="upCashClear" type="button">Iš balanso 0</button></div><div id="upPick" class="small"></div><div id="upMsg" class="up-result"></div><button class="btn primary wide" id="upGo" type="button">Sukti</button></div></div><h3 class="panel-h">Pasirink įdedamus skinus</h3><div id="upInputs" class="skin-grid"></div><h3 class="panel-h">Tikslas</h3><div id="upTargets" class="skin-grid"></div>';
+    '<div class="gauge"><svg viewBox="0 0 320 200" aria-hidden="true"><defs><linearGradient id="ugGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#ffe27a"/><stop offset="55%" stop-color="#ff9a3c"/><stop offset="100%" stop-color="#ff3b3b"/></linearGradient></defs><path id="ugTrack" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="16"/><path id="upArc" fill="none" stroke="url(#ugGrad)" stroke-width="16"/><g id="ugTicks"></g><g id="upPointer"><polygon points="160,46 152,170 168,170" fill="#f7f1dc"/><circle cx="160" cy="170" r="9" fill="#ffd84d" stroke="#2b1d00" stroke-width="2"/></g></svg><div class="gauge-read"><b id="upChance">—</b><span id="upTier">pasirink įnašą</span></div></div>' +
+    '<div class="ug-pair"><button type="button" class="ug-slot" id="slotIn"><span class="ug-slot-h">Pasirink savo skinus (ir/arba balansą)</span><div id="slotInBody"></div></button><button type="button" class="ug-slot" id="slotOut"><span class="ug-slot-h">Pasirink norimą skiną</span><div id="slotOutBody"></div></button></div>' +
+    '<button class="btn primary wide ug-go" id="upGo" type="button">Upgrade</button><div id="upMsg" class="up-result"></div>' +
+    '<div class="ug-bal"><div class="ug-bal-top"><span>Balanso suma</span><b id="upCashLabel">0,00 €</b></div><input id="upRange" type="range" min="0" max="0" value="0" aria-label="Balanso suma"/><div class="ug-bal-top"><span>0</span><span id="upCashMax">max 0,00 €</span></div></div>' +
+    '<div class="ug-quick" id="ugQuick"><button type="button" data-mult="2">x2</button><button type="button" data-mult="4">x4</button><button type="button" data-mult="8">x8</button><button type="button" data-chance="500">5%</button><button type="button" data-chance="5500">55%</button><button type="button" data-chance="7500">75%</button><button type="button" id="ugGear" aria-label="Nustatymai">⚙</button></div>' +
+    '<div id="ugSettings" class="ug-settings hidden"><div class="seg"><button class="segb active" id="sideUnder" type="button">Žemiau</button><button class="segb" id="sideOver" type="button">Virš</button></div><button class="btn" id="ugSound" type="button">Garsas</button><p class="small">Tikimybė = įnašas / tikslas × ' + (100 - edgeNum()) + ' %. Mažiausia 1 %, didžiausia 80 %. Virš 80 % nukerpama. Namų dalis ' + edge + '. Metimą renka serveris. Pralaimėjus įnašas prarandamas. Žaidimo pinigai, ne tikri.</p></div>' +
+    '<div class="ug-tabs" id="ugTabs"><button type="button" class="active" data-ugtab="mine">Mano skinai</button><button type="button" data-ugtab="want">Norimi skinai</button></div>' +
+    '<div id="ugMineTools" class="ug-tools"><div class="seg" id="ugSrc"><button type="button" class="segb active" data-src="inv">Mano skinai</button><button type="button" class="segb" data-src="shop">Parduotuvė</button></div><button class="btn small" id="invSell" type="button">Parduoti pažymėtus (90 %)</button></div>' +
+    '<div id="ugGrid" class="skin-grid"></div>';
   $('up-inv').innerHTML = '<div class="row wrap"><button class="btn primary" id="invSell" type="button">Parduoti pažymėtus</button><button class="btn" id="invToUp" type="button">Į Upgraderį</button></div><div id="invGrid" class="skin-grid"></div>';
   $('up-hist').innerHTML = '<div id="histList" class="hist-list"></div>';
   $('caseGrid').innerHTML = CFG.skins.cases
@@ -1050,6 +1217,7 @@ function buildUpgrader() {
     [...$('shopFilters').children].forEach((x) => x.classList.toggle('primary', x.dataset.rar === shopR));
     renderShop();
   };
+  drawGaugeStatic();
   $('sideUnder').onclick = () => {
     upSide = 'under';
     $('sideUnder').classList.add('active');
@@ -1062,27 +1230,54 @@ function buildUpgrader() {
     $('sideUnder').classList.remove('active');
     refreshUp();
   };
-  $('upCashBtn').onclick = () => {
-    const v = parseEur($('upCashIn').value);
-    if (!v) return toast('Įvesk sumą nuo 0,01 €');
-    if (v > myBal) return toast('Nepakanka balanso');
-    upCash = v;
-    refreshUp();
-  };
-  $('upCashClear').onclick = () => {
-    upCash = 0;
-    $('upCashIn').value = '';
+  $('upRange').oninput = () => {
+    upCash = Number($('upRange').value) || 0;
     refreshUp();
   };
   $('upGo').onclick = doUpgrade;
   $('invSell').onclick = () => sellIds([...picked]);
-  $('invToUp').onclick = () => setUp('upgrade');
-  $('upInputs').onclick = (e) => togglePick(e);
-  $('invGrid').onclick = (e) => togglePick(e);
-  $('upTargets').onclick = (e) => {
-    const b = e.target.closest('[data-target]');
+  $('ugGear').onclick = () => $('ugSettings').classList.toggle('hidden');
+  $('ugSound').onclick = () => {
+    audioOn = !audioOn;
+    storeSet('kazino:sound', audioOn ? '1' : '0');
+    paintSound();
+    if (audioOn) blip(740, 0.1, 'sine');
+  };
+  $('ugQuick').onclick = (e) => {
+    const b = e.target.closest('[data-mult],[data-chance]');
     if (!b) return;
-    upTarget = b.dataset.target;
+    if (b.dataset.mult) pickTargetMult(Number(b.dataset.mult));
+    else pickTargetChance(Number(b.dataset.chance));
+  };
+  $('slotIn').onclick = () => {
+    ugTab = 'mine';
+    refreshUp();
+    const g = $('ugGrid');
+    if (g && g.scrollIntoView) g.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+  $('slotOut').onclick = () => {
+    ugTab = 'want';
+    refreshUp();
+  };
+  $('ugTabs').onclick = (e) => {
+    const b = e.target.closest('[data-ugtab]');
+    if (!b) return;
+    ugTab = b.dataset.ugtab;
+    refreshUp();
+  };
+  $('ugSrc').onclick = (e) => {
+    const b = e.target.closest('[data-src]');
+    if (!b) return;
+    mineSrc = b.dataset.src;
+    refreshUp();
+  };
+  $('ugGrid').onclick = (e) => {
+    if (e.target.closest('[data-item]')) return togglePick(e);
+    const buy = e.target.closest('[data-buy]');
+    if (buy) return buySkin(buy.dataset.buy);
+    const t = e.target.closest('[data-target]');
+    if (!t) return;
+    upTarget = t.dataset.target;
     refreshUp();
   };
   $('shopGrid').onclick = (e) => {
@@ -1090,7 +1285,6 @@ function buildUpgrader() {
     if (b) buySkin(b.dataset.buy);
   };
   renderShop();
-  renderTargets();
   refreshUp();
 }
 function renderShop() {
@@ -1098,9 +1292,122 @@ function renderShop() {
   const items = CFG.skins.items.filter((s) => shopR === 'all' || s.rarity === shopR);
   $('shopGrid').innerHTML = items.map((s) => skinCardHtml(s, { attrs: 'data-buy="' + s.id + '"' })).join('');
 }
-function renderTargets() {
-  if (!builtUp) return;
-  $('upTargets').innerHTML = CFG.skins.items.map((s) => skinCardHtml(s, { selected: s.id === upTarget, attrs: 'data-target="' + s.id + '"' })).join('');
+function edgeNum() {
+  const edge = CFG && CFG.skins ? CFG.skins.upgrade.edge : 0.07;
+  return String(Math.round(100 - edge * 100));
+}
+const GAUGE_CX = 160;
+const GAUGE_CY = 170;
+function gaugeXY(t, r) {
+  const a = Math.PI * (1 - t);
+  return [GAUGE_CX + r * Math.cos(a), GAUGE_CY - r * Math.sin(a)];
+}
+function semiPath(t0, t1, r) {
+  if (t1 - t0 <= 0.001) return '';
+  const p0 = gaugeXY(t0, r);
+  const p1 = gaugeXY(t1, r);
+  const large = t1 - t0 > 0.5 ? 1 : 0;
+  return 'M ' + p0[0].toFixed(2) + ' ' + p0[1].toFixed(2) + ' A ' + r + ' ' + r + ' 0 ' + large + ' 1 ' + p1[0].toFixed(2) + ' ' + p1[1].toFixed(2);
+}
+function drawGaugeStatic() {
+  const ticks = $('ugTicks');
+  const track = $('ugTrack');
+  if (!ticks || !track || ticks.childNodes.length) return;
+  track.setAttribute('d', semiPath(0, 1, 128));
+  let html = '';
+  for (let i = 0; i <= 10; i++) {
+    const a = gaugeXY(i / 10, 116);
+    const b = gaugeXY(i / 10, 142);
+    html += '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="rgba(255,255,255,.55)" stroke-width="2"/>';
+  }
+  ticks.innerHTML = html;
+}
+function emptySlot(dir) {
+  const chev = dir === 'down' ? 'M5 8l7 7 7-7' : 'M5 15l7-7 7 7';
+  return '<div class="ug-ph"><div class="art">' + weaponSvg('ak', '#6a6258') + '</div><svg class="chev" viewBox="0 0 24 24" width="28" height="22" aria-hidden="true"><path d="' + chev + '" fill="none" stroke="#cbbfa6" stroke-width="2" stroke-linecap="round"/></svg></div>';
+}
+function pickedSkins() {
+  const out = [];
+  picked.forEach((id) => {
+    const it = INV.find((x) => x.id === id);
+    const s = it && skinById(it.skinId);
+    if (s) out.push(s);
+  });
+  return out;
+}
+function fillSlots() {
+  const inn = $('slotInBody');
+  const out = $('slotOutBody');
+  if (!inn || !out) return;
+  const skins = pickedSkins();
+  if (!skins.length && !upCash) inn.innerHTML = emptySlot('down');
+  else {
+    const s0 = skins[0];
+    const art = s0 ? weaponSvg(s0.weapon, rarityOf(s0.rarity).color) : weaponSvg('ak', '#ffd84d');
+    const bits = [];
+    if (skins.length) bits.push(skins.length + (skins.length === 1 ? ' skinas' : ' skinai'));
+    if (upCash) bits.push('balansas');
+    inn.innerHTML = '<div class="ug-picked"><div class="art">' + art + '</div><b>' + fmt(selectedSkinValue() + upCash) + '</b><span>' + esc(bits.join(' + ')) + '</span></div>';
+  }
+  const target = upTarget ? skinById(upTarget) : null;
+  if (!target) out.innerHTML = emptySlot('up');
+  else out.innerHTML = '<div class="ug-picked"><div class="art">' + weaponSvg(target.weapon, rarityOf(target.rarity).color) + '</div><b>' + esc(target.name) + '</b><span>' + fmt(target.value) + '</span></div>';
+}
+function chanceTier(bp) {
+  if (!bp) return 'pasirink įnašą';
+  if (bp < 2500) return 'mažas šansas';
+  if (bp < 6000) return 'vidutinis šansas';
+  return 'didelis šansas';
+}
+function closestSkin(ideal, onlyAbove) {
+  let best = null;
+  let bestDiff = Infinity;
+  CFG.skins.items.forEach((s) => {
+    if (onlyAbove && s.value <= onlyAbove) return;
+    const d = Math.abs(s.value - ideal);
+    if (d < bestDiff) {
+      bestDiff = d;
+      best = s;
+    }
+  });
+  return best;
+}
+function pickTargetMult(mult) {
+  const input = selectedSkinValue() + upCash;
+  if (input <= 0) return toast('Pirmiausia pasirink skiną arba balanso sumą');
+  const skin = closestSkin(input * mult, 0) || closestSkin(input * mult, null);
+  if (!skin) return;
+  upTarget = skin.id;
+  ugTab = 'want';
+  refreshUp();
+}
+function pickTargetChance(bp) {
+  const input = selectedSkinValue() + upCash;
+  if (input <= 0) return toast('Pirmiausia pasirink skiną arba balanso sumą');
+  const keep = CFG.skins.upgrade.keepBp;
+  const ideal = Math.max(1, Math.round((input * keep) / bp));
+  const skin = closestSkin(ideal, input) || closestSkin(ideal, null);
+  if (!skin) return;
+  upTarget = skin.id;
+  ugTab = 'want';
+  refreshUp();
+}
+function renderUgGrid() {
+  const grid = $('ugGrid');
+  if (!grid) return;
+  if ($('ugMineTools')) $('ugMineTools').classList.toggle('hidden', ugTab !== 'mine');
+  qsa('#ugTabs [data-ugtab]').forEach((b) => b.classList.toggle('active', b.dataset.ugtab === ugTab));
+  qsa('#ugSrc [data-src]').forEach((b) => b.classList.toggle('active', b.dataset.src === mineSrc));
+  if (ugTab === 'want') {
+    grid.innerHTML = CFG.skins.items.map((s) => skinCardHtml(s, { selected: s.id === upTarget, attrs: 'data-target="' + s.id + '"' })).join('');
+    return;
+  }
+  if (mineSrc === 'shop') {
+    const items = CFG.skins.items.filter((s) => shopR === 'all' || s.rarity === shopR);
+    grid.innerHTML = items.map((s) => skinCardHtml(s, { attrs: 'data-buy="' + s.id + '"' })).join('') || '<p class="small">Parduotuvė tuščia.</p>';
+    return;
+  }
+  grid.innerHTML = INV.length ? itemCards() : '<p class="small">Inventorius tuščias. Atidaryk dėžę arba perjunk į parduotuvę.</p>';
 }
 function itemCards() {
   if (!INV.length) return '<p class="small">Inventorius tuščias. Atidaryk dėžę arba nusipirk skiną.</p>';
@@ -1130,19 +1437,24 @@ function selectedSkinValue() {
 function refreshUp() {
   if (!builtUp) return;
   for (const id of [...picked]) if (!INV.some((x) => x.id === id)) picked.delete(id);
-  $('invGrid').innerHTML = itemCards();
-  $('upInputs').innerHTML = itemCards();
-  renderTargets();
+  if (upCash > myBal) upCash = myBal;
   const input = selectedSkinValue() + upCash;
   const target = upTarget ? skinById(upTarget) : null;
   const ch = target ? clientChance(input, target.value) : null;
-  $('upChance').textContent = ch ? pctBp(ch.bp) : '—';
+  if ($('upChance')) $('upChance').textContent = ch ? pctBp(ch.bp) : '—';
+  if ($('upTier')) $('upTier').textContent = ch ? chanceTier(ch.bp) : 'pasirink įnašą';
   drawDial(ch ? ch.bp : 0, upSide);
-  const parts = [];
-  if (selectedSkinValue()) parts.push('skinai ' + fmt(selectedSkinValue()));
-  if (upCash) parts.push('balansas ' + fmt(upCash));
-  $('upPick').textContent = (parts.join(' + ') || 'Įnašas tuščias') + (target ? ' → ' + target.name + ' (' + fmt(target.value) + ')' : '') + (ch && ch.raw > ch.bp ? ' · tikimybė nukirpta iki 80 %' : '');
-  $('upGo').disabled = upLock || !ch;
+  fillSlots();
+  const range = $('upRange');
+  if (range) {
+    range.max = String(Math.max(0, myBal));
+    if (document.activeElement !== range) range.value = String(upCash);
+    if ($('upCashLabel')) $('upCashLabel').textContent = fmt(upCash);
+    if ($('upCashMax')) $('upCashMax').textContent = 'max ' + fmt(myBal);
+  }
+  if ($('upGo')) $('upGo').disabled = upLock || !ch;
+  renderUgGrid();
+  if (!$('histList')) return;
   $('histList').innerHTML = HIST.length
     ? HIST.map((h) => {
         const p = h.payload || {};
@@ -1159,10 +1471,10 @@ function refreshUp() {
 function drawDial(bp, side) {
   const arc = $('upArc');
   if (!arc) return;
-  const p = (bp || 0) / 10000;
+  const p = Math.max(0, Math.min(1, (bp || 0) / 10000));
   const start = side === 'over' ? 1 - p : 0;
   const end = side === 'over' ? 1 : p;
-  arc.setAttribute('d', arcPath(100, 100, 78, start, end));
+  arc.setAttribute('d', p ? semiPath(start, end, 128) : '');
 }
 function animateCase(caseId, skinId) {
   return new Promise((resolve) => {
@@ -1189,23 +1501,34 @@ function animateCase(caseId, skinId) {
       strip.style.transition = 'transform ' + dur + 'ms cubic-bezier(.12,.7,.08,1)';
       strip.style.transform = 'translateX(' + -(40 * cardW - center + jitter) + 'px)';
     });
-    setTimeout(resolve, dur + 60);
+    setTimeout(() => {
+      const landed = strip.children[40];
+      if (landed) landed.classList.add('landed');
+      const rar = win && rarityOf(win.rarity);
+      if (rar && rar.rank >= 3) celebrate();
+      else blip(660, 0.12, 'sine');
+      resolve();
+    }, dur + 80);
   });
 }
 function spinDial(roll) {
   return new Promise((resolve) => {
     const el = $('upPointer');
+    if (!el) return resolve();
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const dur = reduce ? 0 : 4200;
-    const angle = (roll / 10000) * 360 + (reduce ? 0 : 5 * 360);
-    el.style.transition = 'none';
-    el.style.transform = 'rotate(0deg)';
-    void el.offsetWidth;
-    requestAnimationFrame(() => {
-      el.style.transition = 'transform ' + dur + 'ms cubic-bezier(.12,.75,.05,1)';
-      el.style.transform = 'rotate(' + angle + 'deg)';
-    });
-    setTimeout(resolve, dur + 40);
+    const dur = reduce ? 0 : 4600;
+    const landing = -90 + (roll / 10000) * 180;
+    const start = reduce ? landing : landing - 720;
+    const t0 = Date.now();
+    function frame() {
+      const t = dur === 0 ? 1 : Math.min(1, (Date.now() - t0) / dur);
+      const e = 1 - Math.pow(1 - t, 3);
+      const ang = start + (landing - start) * e;
+      el.setAttribute('transform', 'rotate(' + ang.toFixed(2) + ' 160 170)');
+      if (t < 1) requestAnimationFrame(frame);
+      else resolve();
+    }
+    requestAnimationFrame(frame);
   });
 }
 async function loadSkins() {
@@ -1272,32 +1595,223 @@ async function doUpgrade() {
   INV = r.items || INV;
   picked.clear();
   upCash = 0;
-  if ($('upCashIn')) $('upCashIn').value = '';
-  $('upMsg').textContent = r.won ? 'Laimėjai ' + (skinById(r.targetId) || {}).name : 'Nepasisekė – įnašas prarastas';
+  if ($('upRange')) $('upRange').value = '0';
+  const wonName = (skinById(r.targetId) || {}).name || 'skiną';
+  $('upMsg').textContent = r.won ? 'Laimėjai ' + wonName : 'Nepasisekė – įnašas prarastas';
   $('upMsg').className = 'up-result ' + (r.won ? 'win' : 'lose');
+  if (r.won) celebrate();
+  else blip(180, 0.18, 'sawtooth');
   upLock = false;
   refreshUp();
   loadSkins();
 }
 
-/* ---------- paleidimas ---------- */
-fetch('/config.json')
-  .then((r) => r.json())
-  .then((c) => {
-    CFG = c;
-    buildRoulette();
-    buildWheel();
-    buildSlotRules();
-    renderChips();
-    renderDice();
-    renderSlotBtn();
-    buildUpgrader();
-    avatarPicker($('regAvatars'), regAvatar, (a) => (regAvatar = a));
-    $('nickIn').value = localStorage.getItem('kazino:nick') || '';
-    // Jei yra išsaugota sesija – serveris ją atkurs prisijungimo metu.
-    if (localStorage.getItem(TOKEN_KEY)) {
-      $('authWait').classList.remove('hidden');
-      $('authForm').classList.add('hidden');
+/* ---------- garsas, šventė, tinklas ---------- */
+let audioOn = storeGet('kazino:sound') === '1';
+let actx = null;
+function blip(freq, dur, type) {
+  if (!audioOn) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!actx) actx = new AC();
+    if (actx.state === 'suspended' && actx.resume) actx.resume();
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = type || 'sine';
+    o.frequency.value = freq;
+    const t0 = actx.currentTime;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.07, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g);
+    g.connect(actx.destination);
+    o.start();
+    o.stop(t0 + dur + 0.02);
+  } catch (e) {}
+}
+function buzz(ms) {
+  try {
+    if (navigator.vibrate) navigator.vibrate(ms || 12);
+  } catch (e) {}
+}
+function paintSound() {
+  const on = audioOn ? 'Garsas įj.' : 'Garsas išj.';
+  if ($('soundBtn')) {
+    $('soundBtn').textContent = on;
+    $('soundBtn').setAttribute('aria-pressed', audioOn ? 'true' : 'false');
+  }
+  if ($('ugSound')) $('ugSound').textContent = audioOn ? 'Garsas įjungtas' : 'Garsas išjungtas';
+}
+function celebrate() {
+  blip(523, 0.12, 'triangle');
+  setTimeout(() => blip(784, 0.16, 'triangle'), 90);
+  buzz(20);
+  const canvas = $('fx');
+  if (!canvas || !canvas.getContext) return;
+  const ctx = canvas.getContext('2d');
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  canvas.width = w;
+  canvas.height = h;
+  const colors = ['#ffd84d', '#7dffb0', '#d32ce6', '#5e98d9', '#fff', '#eb4b4b'];
+  const bits = [];
+  for (let i = 0; i < 70; i++) {
+    bits.push({ x: w / 2, y: h * 0.35, vx: (Math.random() - 0.5) * 14, vy: Math.random() * -12 - 2, g: 0.28, c: colors[i % colors.length], s: 4 + Math.random() * 5 });
+  }
+  let frame = 0;
+  function tick() {
+    frame++;
+    ctx.clearRect(0, 0, w, h);
+    let alive = false;
+    for (let i = 0; i < bits.length; i++) {
+      const b = bits[i];
+      b.vy += b.g;
+      b.x += b.vx;
+      b.y += b.vy;
+      if (b.y < h + 20) alive = true;
+      ctx.fillStyle = b.c;
+      ctx.fillRect(b.x, b.y, b.s, b.s * 0.6);
     }
-    socket.connect();
-  });
+    if (alive && frame < 90) requestAnimationFrame(tick);
+    else ctx.clearRect(0, 0, w, h);
+  }
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  requestAnimationFrame(tick);
+}
+function pollHealth() {
+  fetch('/health', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : Promise.reject()))
+    .then((j) => {
+      if ($('healthNote')) $('healthNote').textContent = j && j.ok ? ' /health: serveris veikia' + (j.db ? ' (' + j.db + ')' : '') + '.' : '';
+      if (j && j.ok && cfgReady && socket && !socket.connected && socket.connect) socket.connect();
+    })
+    .catch(() => {
+      if ($('healthNote')) $('healthNote').textContent = ' /health neatsako – serveris tikriausiai bunda.';
+      if (!socket.connected) showNet('Serveris bunda…', 'Nemokamas serveris po pauzės atsikelia apie minutę. Bandome automatiškai.');
+    });
+}
+let cfgReady = false;
+function bootConfig(attempt) {
+  fetch('/config.json', { cache: 'no-store' })
+    .then((r) => {
+      if (!r.ok) throw new Error('bad');
+      return r.json();
+    })
+    .then((c) => {
+      cfgReady = true;
+      CFG = c;
+      buildRoulette();
+      buildWheel();
+      buildSlotRules();
+      renderChips();
+      renderDice();
+      renderSlotBtn();
+      buildUpgrader();
+      wireShell();
+      avatarPicker($('regAvatars'), regAvatar, (a) => (regAvatar = a));
+      $('nickIn').value = storeGet('kazino:nick') || '';
+      if (storeMemoryOnly && $('storeNote')) $('storeNote').classList.remove('hidden');
+      const saved = storeGet(TOKEN_KEY);
+      if (saved) {
+        $('authWait').classList.remove('hidden');
+        $('authForm').classList.add('hidden');
+        setBoot('Atkuriama sesija…');
+      } else hideBoot();
+      if (socket.connect) socket.connect();
+    })
+    .catch(() => {
+      setBoot('Serveris bunda… Nepavyko gauti nustatymų. Bandome dar kartą (' + (attempt + 1) + ').');
+      showNet('Serveris bunda…', 'Jei puslapis tuščias ilgai, palauk iki minutės ir neperkrauk be reikalo.');
+      setTimeout(() => bootConfig(attempt + 1), Math.min(3000 + attempt * 700, 8000));
+    });
+}
+function wireShell() {
+  paintSound();
+  if ($('soundBtn')) {
+    $('soundBtn').onclick = () => {
+      audioOn = !audioOn;
+      storeSet('kazino:sound', audioOn ? '1' : '0');
+      paintSound();
+      if (audioOn) blip(740, 0.1, 'sine');
+    };
+  }
+  if ($('dailyBtn')) {
+    const pr = (CFG && CFG.progress) || { daily: 100000 };
+    $('dailyBtn').textContent = 'Dienos dovana ' + fmt(pr.daily);
+    $('dailyBtn').onclick = async () => {
+      const r = await send('bonus:claim');
+      if (!r.ok) {
+        if ($('dailyMsg')) $('dailyMsg').textContent = r.error || '';
+        return;
+      }
+      if ($('dailyMsg')) $('dailyMsg').textContent = 'Gavai ' + fmt(r.amount) + ' žaidimo pinigų.';
+      celebrate();
+    };
+  }
+  const emos = ['😀', '😂', '🔥', '🍀', '👑', '💰', '🎯', '👏', '😎', '🃏', '💎', '❤️'];
+  if ($('emojiBar') && !$('emojiBar').childElementCount) {
+    $('emojiBar').innerHTML = emos.map((e) => '<button type="button" class="emo" data-emo="' + e + '">' + e + '</button>').join('');
+    $('emojiBar').onclick = (ev) => {
+      const b = ev.target.closest('[data-emo]');
+      if (!b) return;
+      const input = $('chatIn');
+      input.value = (input.value + ' ' + b.getAttribute('data-emo')).trim();
+      input.focus();
+    };
+  }
+  const lobby = $('lobby');
+  if (lobby && !lobby.dataset.wired) {
+    lobby.dataset.wired = '1';
+    lobby.onclick = (ev) => {
+      const b = ev.target.closest('[data-goto],[data-goto-sec]');
+      if (!b) return;
+      buzz(12);
+      if (b.dataset.gotoSec) setSection(b.dataset.gotoSec);
+      else setGameTab(b.dataset.goto);
+    };
+  }
+  const nav = $('bottomNav');
+  if (nav && !nav.dataset.wired) {
+    nav.dataset.wired = '1';
+    nav.onclick = (ev) => {
+      const b = ev.target.closest('[data-bnav]');
+      if (!b) return;
+      buzz(10);
+      const k = b.dataset.bnav;
+      if (k === 'up') setSection('up');
+      else if (k === 'chat') {
+        setSection('casino');
+        const box = document.querySelector('.chatbox');
+        if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (k === 'profile') {
+        $('profPanel').classList.remove('hidden');
+        $('topPanel').classList.add('hidden');
+        renderProfile();
+        $('profPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else if (k === 'games') {
+        setSection('casino');
+        if (tab === 'home') setGameTab('bj');
+        else setGameTab(tab);
+      } else {
+        setSection('casino');
+        setGameTab('home');
+      }
+      qsa('#bottomNav [data-bnav]').forEach((x) => x.classList.toggle('on', x === b));
+    };
+  }
+}
+document.body.addEventListener('click', (ev) => {
+  const b = ev.target.closest && ev.target.closest('button');
+  if (!b) return;
+  buzz(8);
+  blip(480, 0.04, 'triangle');
+});
+setTimeout(() => {
+  if (!socket.connected) setBoot('Serveris bunda… Nemokamas serveris po pauzės dažnai atsikelia tik po 30–60 s. Nieko nespausk – bandysime patys.');
+}, 2500);
+setInterval(pollHealth, 5000);
+setTimeout(pollHealth, 1200);
+
+/* ---------- paleidimas ---------- */
+bootConfig(0);

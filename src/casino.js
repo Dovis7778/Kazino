@@ -4,7 +4,7 @@
 // transakcija. Statymai, kol raundas neišspręstas, saugomi lentelėje open_bets –
 // jei serveris nukrenta, kitą kartą paleidus jie grąžinami žaidėjams.
 const { START_BALANCE, BALANCE_CAP } = require('./money');
-const { loadFeed } = require('./skins');
+const { loadFeed, byId } = require('./skins');
 const { BlackjackTable } = require('./blackjack');
 const { RouletteTable } = require('./roulette');
 const { WheelTable } = require('./wheel');
@@ -19,6 +19,8 @@ class Casino {
     this.users = new Map(); // nick_lc -> vartotojas atmintyje
     this.chat = [];
     this.leaders = [];
+    this.leadersWin = [];
+    this.leadersInv = [];
     this.skinFeed = [];
     this.pending = null;
     this.leadersTimer = null;
@@ -333,6 +335,20 @@ class Casino {
   async refreshLeaders() {
     const rows = await this.db.all('SELECT nick, avatar, balance, games_played, biggest_win FROM users ORDER BY balance DESC, id ASC LIMIT 10');
     this.leaders = rows.map((r) => ({ name: r.nick, avatar: r.avatar, balance: r.balance, games: r.games_played, biggestWin: r.biggest_win }));
+    const wins = await this.db.all('SELECT nick, avatar, balance, biggest_win, games_played FROM users ORDER BY biggest_win DESC, balance DESC, id ASC LIMIT 10');
+    this.leadersWin = wins.map((r) => ({ name: r.nick, avatar: r.avatar, balance: r.balance, biggestWin: r.biggest_win, games: r.games_played }));
+    const skins = await this.db.all('SELECT u.nick AS nick, u.avatar AS avatar, u.balance AS balance, i.skin_id AS skin_id, COUNT(*) AS n FROM inventory i JOIN users u ON u.id = i.user_id GROUP BY u.id, u.nick, u.avatar, u.balance, i.skin_id');
+    const bag = new Map();
+    for (const r of skins) {
+      const skin = byId(r.skin_id);
+      let cur = bag.get(r.nick);
+      if (!cur) {
+        cur = { name: r.nick, avatar: r.avatar, balance: Number(r.balance), value: 0 };
+        bag.set(r.nick, cur);
+      }
+      if (skin) cur.value += skin.value * Number(r.n);
+    }
+    this.leadersInv = [...bag.values()].sort((a, b) => b.value - a.value || String(a.name).localeCompare(b.name)).slice(0, 10);
     this.changed();
   }
 
@@ -365,9 +381,16 @@ class Casino {
       return u ? { ...l, balance: u.balance, avatar: u.avatar, online: !!u.socketId } : { ...l, online: false };
     });
     leaders.sort((a, b) => b.balance - a.balance);
+    const mark = (list) =>
+      list.map((l) => {
+        const u = this.get(l.name);
+        return u ? { ...l, balance: u.balance, avatar: u.avatar, online: !!u.socketId } : { ...l, online: false };
+      });
     return {
       online,
       leaders,
+      leadersWin: mark(this.leadersWin),
+      leadersInv: mark(this.leadersInv),
       chat: this.chat.slice(-60),
       rl: this.rl.state(),
       lt: this.lt.state(),
